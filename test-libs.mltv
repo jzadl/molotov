@@ -1,3 +1,0 @@
-import molotov::hello as molotov
-
-molotov.hello()
