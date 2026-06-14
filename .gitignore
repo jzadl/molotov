@@ -1,14 +1,15 @@
 # Rust
 /target
+Cargo.lock
 
 # Molotov binaries
 /mpm
 /mltv
 
 # Temporary artifacts
-*.rs
 *.bin
 *.out
+*.exe
 
 # IDE / Editor files
 .vscode/
