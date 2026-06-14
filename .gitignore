@@ -1,0 +1,15 @@
+# Rust
+/target
+
+# Molotov binaries
+/mpm
+/mltv
+
+# Temporary artifacts
+*.rs
+*.bin
+*.out
+
+# IDE / Editor files
+.vscode/
+.DS_Store

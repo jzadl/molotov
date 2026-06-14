@@ -1,0 +1,86 @@
+#!/usr/bin/env mltv
+
+# mpm - Molotov Package Manager (Prototype)
+
+def get_libs_dir():
+    embed_rust('let home_val = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());')
+    home = embed_rust('home_val')
+    return home + "/.molotov/libs"
+
+def install(pkg):
+    parts = pkg.split("/")
+    if len(parts) != 2:
+        print("Error: Use format 'user/repo'")
+        return
+
+    user = parts[0]
+    repo = parts[1]
+    
+    libs_dir = get_libs_dir()
+    embed_rust('std::fs::create_dir_all(&libs_dir).unwrap();')
+    
+    target_path = libs_dir + "/" + repo
+    
+    if exists(target_path):
+        print("Package " + repo + " is already installed. Updating...")
+        embed_rust('std::process::Command::new("git").arg("-C").arg(&target_path).arg("pull").status().unwrap();')
+    else:
+        print("Installing " + user + "/" + repo + "...")
+        url = "https://github.com/" + user + "/" + repo + ".git"
+        embed_rust('std::process::Command::new("git").arg("clone").arg(&url).arg(&target_path).status().unwrap();')
+    
+    print("Successfully installed " + repo + "!")
+
+def remove(repo):
+    libs_dir = get_libs_dir()
+    target_path = libs_dir + "/" + repo
+    
+    if exists(target_path):
+        print("Removing package: " + repo)
+        embed_rust('std::fs::remove_dir_all(&target_path).unwrap();')
+        print("Successfully removed " + repo)
+    else:
+        print("Error: Package '" + repo + "' not found")
+
+def list_pkgs():
+    libs_dir = get_libs_dir()
+    print("Installed packages in " + libs_dir + ":")
+    
+    # Usamos Rust para listar directorios
+    embed_rust('if let Ok(entries) = std::fs::read_dir(&libs_dir) {')
+    embed_rust('    for entry in entries {')
+    embed_rust('        if let Ok(entry) = entry {')
+    embed_rust('            if entry.path().is_dir() {')
+    embed_rust('                println!("  - {}", entry.file_name().to_string_lossy());')
+    embed_rust('            }')
+    embed_rust('        }')
+    embed_rust('    }')
+    embed_rust('} else {')
+    embed_rust('    println!("Could not read directory");')
+    embed_rust('}')
+
+# CLI Logic
+args_list = args()
+
+if len(args_list) < 2:
+    print("Molotov Package Manager")
+    print("Usage:")
+    print("  mpm install <user/repo>")
+    print("  mpm remove <repo>")
+    print("  mpm list")
+else:
+    command = args_list[1]
+    if command == "install":
+        if len(args_list) < 3:
+            print("Error: Missing package name")
+        else:
+            install(args_list[2])
+    elif command == "remove":
+        if len(args_list) < 3:
+            print("Error: Missing package name")
+        else:
+            remove(args_list[2])
+    elif command == "list":
+        list_pkgs()
+    else:
+        print("Unknown command: " + command)
