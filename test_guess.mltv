@@ -1,7 +1,0 @@
-def get_libs_dir():
-    return "libs"
-
-def remove(repo):
-    libs_dir = get_libs_dir()
-    target_path = libs_dir + "/" + repo
-    print(repo)
