@@ -69,14 +69,22 @@ jobs:
         if: "!endsWith(matrix.archive, '.zip')"
         run: |
           cp target/${{ matrix.target }}/release/${{ matrix.artifact }} mltv
-          tar -czf ${{ matrix.archive }} mltv docs/README.md
+          if [ -f "docs/README.md" ]; then
+            tar -czf ${{ matrix.archive }} mltv docs/README.md
+          else
+            tar -czf ${{ matrix.archive }} mltv
+          fi
           rm mltv
 
       - name: Package (zip)
         if: endsWith(matrix.archive, '.zip')
         run: |
           cp target/${{ matrix.target }}/release/${{ matrix.artifact }} mltv.exe
-          zip ${{ matrix.archive }} mltv.exe docs/README.md
+          if [ -f "docs/README.md" ]; then
+            zip ${{ matrix.archive }} mltv.exe docs/README.md
+          else
+            zip ${{ matrix.archive }} mltv.exe
+          fi
           rm mltv.exe
 
       - name: Upload artifact
