@@ -1,29 +1,37 @@
-use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
-use std::fs;
 use crate::ast::*;
-use crate::tokenizer::tokenize;
 use crate::parser::Parser;
+use crate::tokenizer::tokenize;
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::path::PathBuf;
 
 fn resolve_module(module_path: &str, source_dir: &str) -> Option<PathBuf> {
     let parts: Vec<&str> = module_path.split("::").collect();
-    
+
     // Try current dir first
     let mut local_path = PathBuf::from(source_dir);
-    for part in &parts { local_path.push(part); }
+    for part in &parts {
+        local_path.push(part);
+    }
     local_path.set_extension("mltv");
-    if local_path.exists() { return Some(local_path); }
+    if local_path.exists() {
+        return Some(local_path);
+    }
 
     // Try ~/.molotov/libs
     if let Ok(home) = std::env::var("HOME") {
         let mut lib_path = PathBuf::from(home);
         lib_path.push(".molotov/libs");
-        
+
         // Try direct file ~/.molotov/libs/a/b.mltv
         let mut p1 = lib_path.clone();
-        for part in &parts { p1.push(part); }
+        for part in &parts {
+            p1.push(part);
+        }
         p1.set_extension("mltv");
-        if p1.exists() { return Some(p1); }
+        if p1.exists() {
+            return Some(p1);
+        }
 
         // Try ~/.molotov/libs/a/a.mltv (convenience)
         if parts.len() == 1 {
@@ -31,7 +39,21 @@ fn resolve_module(module_path: &str, source_dir: &str) -> Option<PathBuf> {
             p2.push(parts[0]);
             p2.push(parts[0]);
             p2.set_extension("mltv");
-            if p2.exists() { return Some(p2); }
+            if p2.exists() {
+                return Some(p2);
+            }
+        }
+
+        // Try ~/.molotov/libs/a/b/b.mltv (convenience for user/repo namespaces)
+        if parts.len() == 2 {
+            let mut p3 = lib_path.clone();
+            p3.push(parts[0]);
+            p3.push(parts[1]);
+            p3.push(parts[1]);
+            p3.set_extension("mltv");
+            if p3.exists() {
+                return Some(p3);
+            }
         }
     }
 
@@ -58,32 +80,59 @@ impl TypeEnv {
             Expr::NoneLit => Type::None,
             Expr::Ident(name) => self.vars.get(name).cloned().unwrap_or(Type::Unknown),
             Expr::List(items) => {
-                if items.is_empty() { Type::List(Box::new(Type::Unknown)) }
-                else { Type::List(Box::new(self.infer_expr_type(&items[0]))) }
+                if items.is_empty() {
+                    Type::List(Box::new(Type::Unknown))
+                } else {
+                    Type::List(Box::new(self.infer_expr_type(&items[0])))
+                }
             }
             Expr::Dict(pairs) => {
-                if pairs.is_empty() { Type::Dict(Box::new(Type::Str), Box::new(Type::Value)) }
-                else {
+                if pairs.is_empty() {
+                    Type::Dict(Box::new(Type::Str), Box::new(Type::Value))
+                } else {
                     let kt = self.infer_expr_type(&pairs[0].0);
                     let vt = self.infer_expr_type(&pairs[0].1);
                     Type::Dict(Box::new(kt), Box::new(vt))
                 }
             }
-            Expr::Tuple(items) => Type::Tuple(items.iter().map(|e| self.infer_expr_type(e)).collect()),
+            Expr::Tuple(items) => {
+                Type::Tuple(items.iter().map(|e| self.infer_expr_type(e)).collect())
+            }
             Expr::Starred(e) => self.infer_expr_type(e),
             Expr::Comp(c) => match c.kind {
                 ComprehensionKind::List => Type::List(Box::new(self.infer_expr_type(&c.element))),
                 ComprehensionKind::Dict => Type::Dict(
-                    Box::new(c.key.as_ref().map(|k| self.infer_expr_type(k)).unwrap_or(Type::Str)),
+                    Box::new(
+                        c.key
+                            .as_ref()
+                            .map(|k| self.infer_expr_type(k))
+                            .unwrap_or(Type::Str),
+                    ),
                     Box::new(self.infer_expr_type(&c.element)),
                 ),
             },
             Expr::BinOp(left, op, right) => match op {
-                BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge | BinOp::In | BinOp::NotIn | BinOp::Is => Type::Bool,
+                BinOp::Eq
+                | BinOp::Ne
+                | BinOp::Lt
+                | BinOp::Gt
+                | BinOp::Le
+                | BinOp::Ge
+                | BinOp::In
+                | BinOp::NotIn
+                | BinOp::Is => Type::Bool,
                 BinOp::Add => {
                     let lt = self.infer_expr_type(left);
                     let rt = self.infer_expr_type(right);
-                    if lt == Type::Str || rt == Type::Str || lt == Type::Unknown || rt == Type::Unknown { Type::Str } else { Type::I64 }
+                    if lt == Type::Str
+                        || rt == Type::Str
+                        || lt == Type::Unknown
+                        || rt == Type::Unknown
+                    {
+                        Type::Str
+                    } else {
+                        Type::I64
+                    }
                 }
                 BinOp::FloorDiv | BinOp::Mod | BinOp::Sub | BinOp::Mul | BinOp::Div => Type::I64,
                 BinOp::Pow => Type::F64,
@@ -114,8 +163,14 @@ impl TypeEnv {
                 "sum" => {
                     if let Expr::FuncCall(_, args) = expr {
                         let elem_type = args.first().map(|a| self.infer_expr_type(a));
-                        if matches!(elem_type, Some(Type::List(t)) if *t == Type::F64) { Type::F64 } else { Type::I64 }
-                    } else { Type::I64 }
+                        if matches!(elem_type, Some(Type::List(t)) if *t == Type::F64) {
+                            Type::F64
+                        } else {
+                            Type::I64
+                        }
+                    } else {
+                        Type::I64
+                    }
                 }
                 "avg" => Type::F64,
                 "min_val" => Type::I64,
@@ -138,10 +193,13 @@ impl TypeEnv {
             Expr::MethodCall(_, method, _) => match method.as_str() {
                 "append" | "push" | "insert" | "sort" | "reverse" | "clear" => Type::Unit,
                 "pop" | "remove" => Type::Unknown,
-                "upper" | "lower" | "strip" | "replace" | "capitalize" | "title" | "swapcase" => Type::Str,
+                "upper" | "lower" | "strip" | "replace" | "capitalize" | "title" | "swapcase" => {
+                    Type::Str
+                }
                 "split" | "splitlines" | "rsplit" => Type::List(Box::new(Type::Str)),
                 "join" => Type::Str,
-                "startswith" | "endswith" | "isalpha" | "isdigit" | "isalnum" | "isspace" | "islower" | "isupper" => Type::Bool,
+                "startswith" | "endswith" | "isalpha" | "isdigit" | "isalnum" | "isspace"
+                | "islower" | "isupper" => Type::Bool,
                 "find" | "index" | "rfind" | "rindex" | "count" => Type::I64,
                 "keys" | "values" | "items" => Type::Unknown,
                 "get" | "popitem" => Type::Unknown,
@@ -167,7 +225,10 @@ impl TypeEnv {
                 }
             }
             Expr::Slice(obj, _, _) => {
-                let ot = obj.as_ref().map(|o| self.infer_expr_type(o)).unwrap_or(Type::Unknown);
+                let ot = obj
+                    .as_ref()
+                    .map(|o| self.infer_expr_type(o))
+                    .unwrap_or(Type::Unknown);
                 match ot {
                     Type::List(t) => Type::List(t),
                     Type::Str => Type::Str,
@@ -183,14 +244,23 @@ impl TypeEnv {
 fn strip_parens(s: &str) -> String {
     let s = s.trim();
     if s.starts_with('(') && s.ends_with(')') {
-        let inner = &s[1..s.len()-1];
+        let inner = &s[1..s.len() - 1];
         let mut depth = 0i32;
         let mut ok = true;
         for ch in inner.chars() {
             match ch {
                 '(' => depth += 1,
-                ')' => { depth -= 1; if depth < 0 { ok = false; break; } }
-                ',' if depth == 0 => { ok = false; break; }
+                ')' => {
+                    depth -= 1;
+                    if depth < 0 {
+                        ok = false;
+                        break;
+                    }
+                }
+                ',' if depth == 0 => {
+                    ok = false;
+                    break;
+                }
                 _ => {}
             }
         }
@@ -206,11 +276,21 @@ fn body_contains_raise(stmts: &[Stmt]) -> bool {
         match s {
             Stmt::Raise(_) => return true,
             Stmt::If(branches, else_body) => {
-                for (_, body) in branches { if body_contains_raise(body) { return true; } }
-                if let Some(body) = else_body { if body_contains_raise(body) { return true; } }
+                for (_, body) in branches {
+                    if body_contains_raise(body) {
+                        return true;
+                    }
+                }
+                if let Some(body) = else_body {
+                    if body_contains_raise(body) {
+                        return true;
+                    }
+                }
             }
             Stmt::For(_, _, body) | Stmt::While(_, body) | Stmt::Try { body, .. } => {
-                if body_contains_raise(body) { return true; }
+                if body_contains_raise(body) {
+                    return true;
+                }
             }
             _ => {}
         }
@@ -227,7 +307,20 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
         Expr::IntLit(v) => v.to_string(),
         Expr::FloatLit(v) => v.to_string(),
         Expr::StrLit(s) => {
-            let escaped = s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n").replace('\t', "\\t").replace('\r', "\\r");
+            let mut escaped = String::new();
+            for c in s.chars() {
+                match c {
+                    '\\' => escaped.push_str("\\\\"),
+                    '"' => escaped.push_str("\\\""),
+                    '\n' => escaped.push_str("\\n"),
+                    '\t' => escaped.push_str("\\t"),
+                    '\r' => escaped.push_str("\\r"),
+                    '\x00'..='\x1f' | '\x7f' => {
+                        escaped.push_str(&format!("\\x{:02x}", c as u32));
+                    }
+                    _ => escaped.push(c),
+                }
+            }
             format!("\"{}\".to_string()", escaped)
         }
         Expr::BoolLit(v) => v.to_string(),
@@ -251,11 +344,18 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
                         let iter_code = expr_to_rust(&g.iter, env, ctx);
                         let iter_type = env.infer_expr_type(&g.iter);
                         if matches!(&iter_type, Type::List(_)) {
-                            code.push_str(&format!("for {} in {}.iter().copied()", g.var, iter_code));
+                            code.push_str(&format!(
+                                "for {} in {}.iter().copied()",
+                                g.var, iter_code
+                            ));
                         } else if matches!(&iter_type, Type::Str) {
                             code.push_str(&format!("for {} in {}.chars()", g.var, iter_code));
                         } else {
-                            code.push_str(&format!("for {} in {}", g.var, strip_parens(&iter_code)));
+                            code.push_str(&format!(
+                                "for {} in {}",
+                                g.var,
+                                strip_parens(&iter_code)
+                            ));
                         }
                         code.push_str(" { ");
                         if let Some(cond) = &g.cond {
@@ -267,7 +367,9 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
                     code.push_str(&elem);
                     code.push_str("); ");
                     for g in c.generators.iter().rev() {
-                        if g.cond.is_some() { code.push_str(" } "); }
+                        if g.cond.is_some() {
+                            code.push_str(" } ");
+                        }
                         code.push_str(" } ");
                     }
                     code.push_str(" __comp }");
@@ -275,7 +377,11 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
                 }
                 ComprehensionKind::Dict => {
                     let val = expr_to_rust(&c.element, env, ctx);
-                    let key = c.key.as_ref().map(|k| expr_to_rust(k, env, ctx)).unwrap_or_default();
+                    let key = c
+                        .key
+                        .as_ref()
+                        .map(|k| expr_to_rust(k, env, ctx))
+                        .unwrap_or_default();
                     env.uses_hashmap = true;
                     let mut code = String::new();
                     code.push_str("{ let mut __comp = HashMap::new(); ");
@@ -283,9 +389,16 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
                         let iter_code = expr_to_rust(&g.iter, env, ctx);
                         let iter_type = env.infer_expr_type(&g.iter);
                         if matches!(&iter_type, Type::List(_)) {
-                            code.push_str(&format!("for {} in {}.iter().copied()", g.var, iter_code));
+                            code.push_str(&format!(
+                                "for {} in {}.iter().copied()",
+                                g.var, iter_code
+                            ));
                         } else {
-                            code.push_str(&format!("for {} in {}", g.var, strip_parens(&iter_code)));
+                            code.push_str(&format!(
+                                "for {} in {}",
+                                g.var,
+                                strip_parens(&iter_code)
+                            ));
                         }
                         code.push_str(" { ");
                         if let Some(cond) = &g.cond {
@@ -293,7 +406,9 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
                             code.push_str(&format!("if {} {{ ", cc));
                         }
                         code.push_str(&format!("__comp.insert({}, {}); ", key, val));
-                        if g.cond.is_some() { code.push_str(" } "); }
+                        if g.cond.is_some() {
+                            code.push_str(" } ");
+                        }
                         code.push_str(" } ");
                     }
                     code.push_str(" __comp }");
@@ -308,12 +423,30 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
                 BinOp::Add => {
                     let lt = env.infer_expr_type(left);
                     let rt = env.infer_expr_type(right);
-                    if lt == Type::Str || rt == Type::Str || lt == Type::Unknown || rt == Type::Unknown {
-                        let l_use = if lt == Type::Str { l.clone() } else if lt != Type::Unknown { format!("{}.to_string()", l) } else { l.clone() };
-                        let r_use = if rt == Type::Str { format!("&{}", r) } else if rt != Type::Unknown { format!("&{}.to_string()", r) } else { format!("&{}", r) };
+                    if lt == Type::Str
+                        || rt == Type::Str
+                        || lt == Type::Unknown
+                        || rt == Type::Unknown
+                    {
+                        let l_use = if lt == Type::Str {
+                            l.clone()
+                        } else if lt != Type::Unknown {
+                            format!("{}.to_string()", l)
+                        } else {
+                            l.clone()
+                        };
+                        let r_use = if rt == Type::Str {
+                            format!("&{}", r)
+                        } else if rt != Type::Unknown {
+                            format!("&{}.to_string()", r)
+                        } else {
+                            format!("&{}", r)
+                        };
                         format!("{} + {}", l_use, r_use)
-                    } else { format!("{} + {}", l, r) }
-                },
+                    } else {
+                        format!("{} + {}", l, r)
+                    }
+                }
                 BinOp::Sub => format!("{} - {}", l, r),
                 BinOp::Mul => format!("{} * {}", l, r),
                 BinOp::Div => format!("{} as f64 / {} as f64", l, r),
@@ -335,7 +468,10 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
         }
         Expr::UnaryOp(op, expr) => {
             let e = expr_to_rust(expr, env, ctx);
-            match op { UnaryOp::Neg => format!("-{}", e), UnaryOp::Not => format!("!{}", e) }
+            match op {
+                UnaryOp::Neg => format!("-{}", e),
+                UnaryOp::Not => format!("!{}", e),
+            }
         }
         Expr::FuncCall(name, args) => {
             let mut args_rust: Vec<String> = Vec::new();
@@ -505,7 +641,12 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
         Expr::MethodCall(obj, method, args) => {
             let obj_s = expr_to_rust(obj, env, ctx);
             let args_s: Vec<String> = args.iter().map(|a| expr_to_rust(a, env, ctx)).collect();
-            let sep = if ctx.module_names.contains(&obj_s) || ctx.processed_modules.contains(&obj_s) { "::" } else { "." };
+            let sep = if ctx.module_names.contains(&obj_s) || ctx.processed_modules.contains(&obj_s)
+            {
+                "::"
+            } else {
+                "."
+            };
             match method.as_str() {
                 "append" => format!("{}.push({})", obj_s, args_s.join(", ")),
                 "pop" => format!("{}.pop()", obj_s),
@@ -520,25 +661,61 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
                 "strip" => format!("{}.trim().to_string()", obj_s),
                 "lstrip" => format!("{}.trim_start().to_string()", obj_s),
                 "rstrip" => format!("{}.trim_end().to_string()", obj_s),
-                "capitalize" => format!("{}.chars().next().map_or(String::new(), |c| c.to_uppercase().to_string() + &{}[1..].to_lowercase())", obj_s, obj_s),
-                "title" => format!("{}.split(' ').map(|w| {{ let mut c = w.chars(); match c.next() {{ None => String::new(), Some(f) => f.to_uppercase().to_string() + c.as_str() }} }}).collect::<Vec<_>>().join(\" \")", obj_s),
-                "swapcase" => format!("{}.chars().map(|c| if c.is_uppercase() {{ c.to_lowercase().to_string() }} else {{ c.to_uppercase().to_string() }}).collect::<Vec<_>>().join(\"\")", obj_s),
+                "capitalize" => format!(
+                    "{}.chars().next().map_or(String::new(), |c| c.to_uppercase().to_string() + &{}[1..].to_lowercase())",
+                    obj_s, obj_s
+                ),
+                "title" => format!(
+                    "{}.split(' ').map(|w| {{ let mut c = w.chars(); match c.next() {{ None => String::new(), Some(f) => f.to_uppercase().to_string() + c.as_str() }} }}).collect::<Vec<_>>().join(\" \")",
+                    obj_s
+                ),
+                "swapcase" => format!(
+                    "{}.chars().map(|c| if c.is_uppercase() {{ c.to_lowercase().to_string() }} else {{ c.to_uppercase().to_string() }}).collect::<Vec<_>>().join(\"\")",
+                    obj_s
+                ),
                 "split" => {
-                    if args_s.is_empty() { format!("{}.split_whitespace().map(|s| s.to_string()).collect::<Vec<_>>()", obj_s) }
-                    else { format!("{}.split(&{}).map(|s| s.to_string()).collect::<Vec<_>>()", obj_s, args_s[0]) }
+                    if args_s.is_empty() {
+                        format!(
+                            "{}.split_whitespace().map(|s| s.to_string()).collect::<Vec<_>>()",
+                            obj_s
+                        )
+                    } else {
+                        format!(
+                            "{}.split(&{}).map(|s| s.to_string()).collect::<Vec<_>>()",
+                            obj_s, args_s[0]
+                        )
+                    }
                 }
                 "rsplit" => {
-                    if args_s.is_empty() { format!("{}.split_whitespace().rev().map(|s| s.to_string()).collect::<Vec<_>>()", obj_s) }
-                    else { format!("{}.rsplit(&{}).map(|s| s.to_string()).collect::<Vec<_>>()", obj_s, args_s[0]) }
+                    if args_s.is_empty() {
+                        format!(
+                            "{}.split_whitespace().rev().map(|s| s.to_string()).collect::<Vec<_>>()",
+                            obj_s
+                        )
+                    } else {
+                        format!(
+                            "{}.rsplit(&{}).map(|s| s.to_string()).collect::<Vec<_>>()",
+                            obj_s, args_s[0]
+                        )
+                    }
                 }
-                "splitlines" => format!("{}.lines().map(|s| s.to_string()).collect::<Vec<_>>()", obj_s),
+                "splitlines" => format!(
+                    "{}.lines().map(|s| s.to_string()).collect::<Vec<_>>()",
+                    obj_s
+                ),
                 "join" => {
-                    if args.is_empty() { format!("{}.join(\"\")", obj_s) }
-                    else { format!("{}.join(&{})", args_s[0], obj_s) }
+                    if args.is_empty() {
+                        format!("{}.join(\"\")", obj_s)
+                    } else {
+                        format!("{}.join(&{})", args_s[0], obj_s)
+                    }
                 }
                 "replace" => {
-                    if args_s.len() >= 2 { format!("{}.replace(&{}, &{})", obj_s, args_s[0], args_s[1]) }
-                    else { format!("{}.to_string()", obj_s) }
+                    if args_s.len() >= 2 {
+                        format!("{}.replace(&{}, &{})", obj_s, args_s[0], args_s[1])
+                    } else {
+                        format!("{}.to_string()", obj_s)
+                    }
                 }
                 "startswith" => format!("{}.starts_with(&{})", obj_s, args_s[0]),
                 "endswith" => format!("{}.ends_with(&{})", obj_s, args_s[0]),
@@ -546,25 +723,50 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
                 "isdigit" => format!("{}.chars().all(|c| c.is_ascii_digit())", obj_s),
                 "isalnum" => format!("{}.chars().all(|c| c.is_alphanumeric())", obj_s),
                 "isspace" => format!("{}.chars().all(|c| c.is_whitespace())", obj_s),
-                "islower" => format!("{}.chars().any(|c| c.is_lowercase()) && !{}.chars().any(|c| c.is_uppercase())", obj_s, obj_s),
-                "isupper" => format!("{}.chars().any(|c| c.is_uppercase()) && !{}.chars().any(|c| c.is_lowercase())", obj_s, obj_s),
-                "find" | "index" => format!("{}.find(&{}).map_or(-1i64, |i| i as i64)", obj_s, args_s[0]),
-                "rfind" | "rindex" => format!("{}.rfind(&{}).map_or(-1i64, |i| i as i64)", obj_s, args_s[0]),
+                "islower" => format!(
+                    "{}.chars().any(|c| c.is_lowercase()) && !{}.chars().any(|c| c.is_uppercase())",
+                    obj_s, obj_s
+                ),
+                "isupper" => format!(
+                    "{}.chars().any(|c| c.is_uppercase()) && !{}.chars().any(|c| c.is_lowercase())",
+                    obj_s, obj_s
+                ),
+                "find" | "index" => {
+                    format!("{}.find(&{}).map_or(-1i64, |i| i as i64)", obj_s, args_s[0])
+                }
+                "rfind" | "rindex" => format!(
+                    "{}.rfind(&{}).map_or(-1i64, |i| i as i64)",
+                    obj_s, args_s[0]
+                ),
                 "count" => format!("{}.matches(&{}).count() as i64", obj_s, args_s[0]),
                 "get" => {
-                    if args_s.len() >= 2 { format!("{}.get(&{}).cloned().unwrap_or_else(|| {})", obj_s, args_s[0], args_s[1]) }
-                    else { format!("{}.get(&{}).cloned()", obj_s, args_s[0]) }
+                    if args_s.len() >= 2 {
+                        format!(
+                            "{}.get(&{}).cloned().unwrap_or_else(|| {})",
+                            obj_s, args_s[0], args_s[1]
+                        )
+                    } else {
+                        format!("{}.get(&{}).cloned()", obj_s, args_s[0])
+                    }
                 }
                 "keys" => format!("{}.keys().cloned().collect::<Vec<_>>()", obj_s),
                 "values" => format!("{}.values().cloned().collect::<Vec<_>>()", obj_s),
-                "items" => format!("{}.iter().map(|(k, v)| (k.clone(), v.clone())).collect::<Vec<_>>()", obj_s),
+                "items" => format!(
+                    "{}.iter().map(|(k, v)| (k.clone(), v.clone())).collect::<Vec<_>>()",
+                    obj_s
+                ),
                 "popitem" => format!("{}.drain().next().unwrap()", obj_s),
                 _ => format!("{}{}{}({})", obj_s, sep, method, args_s.join(", ")),
             }
         }
         Expr::Attribute(obj, attr) => {
             let obj_s = expr_to_rust(obj, env, ctx);
-            let sep = if ctx.module_names.contains(&obj_s) || ctx.processed_modules.contains(&obj_s) { "::" } else { "." };
+            let sep = if ctx.module_names.contains(&obj_s) || ctx.processed_modules.contains(&obj_s)
+            {
+                "::"
+            } else {
+                "."
+            };
             format!("{}{}{}", obj_s, sep, attr)
         }
         Expr::Subscript(obj, index) => {
@@ -572,30 +774,54 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
             let obj_type = env.infer_expr_type(obj);
             let idx_type = env.infer_expr_type(index);
             if matches!(index.as_ref(), Expr::Slice(_, _, _)) {
-                let start_s = match index.as_ref() { Expr::Slice(s, _, _) => s.as_ref(), _ => None };
-                let end_s = match index.as_ref() { Expr::Slice(_, e, _) => e.as_ref(), _ => None };
-                let step_s = match index.as_ref() { Expr::Slice(_, _, s) => s.as_ref(), _ => None };
-                let skip = start_s.map(|s| format!(".skip({} as usize)", expr_to_rust(s, env, ctx))).unwrap_or_default();
-                let take = end_s.map(|s| format!(".take({} as usize)", expr_to_rust(s, env, ctx))).unwrap_or_default();
-                let step = step_s.map(|s| format!(".step_by({} as usize)", expr_to_rust(s, env, ctx))).unwrap_or_default();
-                format!("{{ let v: String = {}.chars(){}{}{}.collect(); v }}", obj_s, skip, take, step)
+                let start_s = match index.as_ref() {
+                    Expr::Slice(s, _, _) => s.as_ref(),
+                    _ => None,
+                };
+                let end_s = match index.as_ref() {
+                    Expr::Slice(_, e, _) => e.as_ref(),
+                    _ => None,
+                };
+                let step_s = match index.as_ref() {
+                    Expr::Slice(_, _, s) => s.as_ref(),
+                    _ => None,
+                };
+                let skip = start_s
+                    .map(|s| format!(".skip({} as usize)", expr_to_rust(s, env, ctx)))
+                    .unwrap_or_default();
+                let take = end_s
+                    .map(|s| format!(".take({} as usize)", expr_to_rust(s, env, ctx)))
+                    .unwrap_or_default();
+                let step = step_s
+                    .map(|s| format!(".step_by({} as usize)", expr_to_rust(s, env, ctx)))
+                    .unwrap_or_default();
+                format!(
+                    "{{ let v: String = {}.chars(){}{}{}.collect(); v }}",
+                    obj_s, skip, take, step
+                )
             } else if let Expr::StrLit(s) = index.as_ref() {
-                let escaped = s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n").replace('\t', "\\t").replace('\r', "\\r");
+                let escaped = s
+                    .replace('\\', "\\\\")
+                    .replace('"', "\\\"")
+                    .replace('\n', "\\n")
+                    .replace('\t', "\\t")
+                    .replace('\r', "\\r");
                 format!("{}[\"{}\"]", obj_s, escaped)
             } else if matches!(obj_type, Type::Dict(_, _)) {
                 let raw = expr_to_rust(index, env, ctx);
                 format!("{}[&{}]", obj_s, raw)
             } else if idx_type == Type::I64 {
                 let raw = expr_to_rust(index, env, ctx);
-                format!("{{ let __v = &{}; let __i = {} as i64; if __i < 0 {{ __v[__v.len() - ((-__i) as usize)].clone() }} else {{ __v[__i as usize].clone() }} }}", obj_s, raw)
+                format!(
+                    "{{ let __v = &{}; let __i = {} as i64; if __i < 0 {{ __v[__v.len() - ((-__i) as usize)].clone() }} else {{ __v[__i as usize].clone() }} }}",
+                    obj_s, raw
+                )
             } else {
                 let raw = expr_to_rust(index, env, ctx);
                 format!("{}[{}]", obj_s, raw)
             }
         }
-        Expr::Slice(_, _, _) => {
-            String::new()
-        }
+        Expr::Slice(_, _, _) => String::new(),
         Expr::Dict(pairs) => {
             env.uses_hashmap = true;
             let mut entries = Vec::new();
@@ -607,8 +833,9 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
             format!("HashMap::from([{}])", entries.join(", "))
         }
         Expr::List(items) => {
-            if items.is_empty() { "Vec::new()".to_string() }
-            else {
+            if items.is_empty() {
+                "Vec::new()".to_string()
+            } else {
                 let elems: Vec<String> = items.iter().map(|e| expr_to_rust(e, env, ctx)).collect();
                 format!("vec![{}]", elems.join(", "))
             }
@@ -622,7 +849,22 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
             let mut fmt_args = Vec::new();
             for p in parts {
                 match p {
-                    Expr::StrLit(s) => fmt_str.push_str(&s.replace('{', "{{").replace('}', "}}")),
+                    Expr::StrLit(s) => {
+                        let replaced = s.replace('{', "{{").replace('}', "}}");
+                        for c in replaced.chars() {
+                            match c {
+                                '\\' => fmt_str.push_str("\\\\"),
+                                '"' => fmt_str.push_str("\\\""),
+                                '\n' => fmt_str.push_str("\\n"),
+                                '\t' => fmt_str.push_str("\\t"),
+                                '\r' => fmt_str.push_str("\\r"),
+                                '\x00'..='\x1f' | '\x7f' => {
+                                    fmt_str.push_str(&format!("\\x{:02x}", c as u32));
+                                }
+                                _ => fmt_str.push(c),
+                            }
+                        }
+                    }
                     other => {
                         fmt_str.push_str("{}");
                         fmt_args.push(expr_to_rust(other, env, ctx));
@@ -644,62 +886,107 @@ fn is_copy_type(t: &Type) -> bool {
 
 fn guess_type_from_name(name: &str) -> Type {
     let lower = name.to_lowercase();
-    let string_names = ["name", "text", "msg", "message", "s", "str", "title", "label", "prompt", "repo", "path", "dir", "url", "pkg", "cmd", "command"];
-    if string_names.contains(&lower.as_str()) || lower.contains("dir") || lower.contains("path") || lower.contains("libs") { Type::Str }
-    else { Type::I64 }
+    let string_names = [
+        "name", "text", "msg", "message", "s", "str", "title", "label", "prompt", "repo", "path",
+        "dir", "url", "pkg", "cmd", "command",
+    ];
+    if string_names.contains(&lower.as_str())
+        || lower.contains("dir")
+        || lower.contains("path")
+        || lower.contains("libs")
+    {
+        Type::Str
+    } else {
+        Type::I64
+    }
 }
 
 fn scan_param_type(name: &str, stmts: &[Stmt], env: &TypeEnv) -> Type {
     for stmt in stmts {
         match stmt {
             Stmt::Expr(e) | Stmt::Return(Some(e)) => {
-                if let Some(t) = scan_expr_for_param(name, e, env) { return t; }
+                if let Some(t) = scan_expr_for_param(name, e, env) {
+                    return t;
+                }
             }
             Stmt::Assign(_, value, _) | Stmt::AugAssign(_, _, value) => {
-                if let Some(t) = scan_expr_for_param(name, value, env) { return t; }
+                if let Some(t) = scan_expr_for_param(name, value, env) {
+                    return t;
+                }
             }
             Stmt::AssignTuple(_, value) => {
-                if let Some(t) = scan_expr_for_param(name, value, env) { return t; }
+                if let Some(t) = scan_expr_for_param(name, value, env) {
+                    return t;
+                }
             }
             Stmt::If(branches, else_body) => {
                 for (cond, body) in branches {
-                    if let Some(t) = scan_expr_for_param(name, cond, env) { return t; }
+                    if let Some(t) = scan_expr_for_param(name, cond, env) {
+                        return t;
+                    }
                     let t = scan_param_type(name, body, env);
-                    if t != Type::I64 { return t; }
+                    if t != Type::I64 {
+                        return t;
+                    }
                 }
                 if let Some(body) = else_body {
                     let t = scan_param_type(name, body, env);
-                    if t != Type::I64 { return t; }
+                    if t != Type::I64 {
+                        return t;
+                    }
                 }
             }
             Stmt::While(cond, body) | Stmt::For(_, cond, body) => {
-                if let Some(t) = scan_expr_for_param(name, cond, env) { return t; }
+                if let Some(t) = scan_expr_for_param(name, cond, env) {
+                    return t;
+                }
                 let t = scan_param_type(name, body, env);
-                if t != Type::I64 { return t; }
+                if t != Type::I64 {
+                    return t;
+                }
             }
             Stmt::FuncDef { body, .. } => {
                 let t = scan_param_type(name, body, env);
-                if t != Type::I64 { return t; }
+                if t != Type::I64 {
+                    return t;
+                }
             }
             Stmt::With { expr, body, .. } => {
-                if let Some(t) = scan_expr_for_param(name, expr, env) { return t; }
+                if let Some(t) = scan_expr_for_param(name, expr, env) {
+                    return t;
+                }
                 let t = scan_param_type(name, body, env);
-                if t != Type::I64 { return t; }
+                if t != Type::I64 {
+                    return t;
+                }
             }
-            Stmt::Try { body, handlers, else_body, finally_body } => {
+            Stmt::Try {
+                body,
+                handlers,
+                else_body,
+                finally_body,
+            } => {
                 let t = scan_param_type(name, body, env);
-                if t != Type::I64 { return t; }
+                if t != Type::I64 {
+                    return t;
+                }
                 for h in handlers {
                     let t = scan_param_type(name, &h.body, env);
-                    if t != Type::I64 { return t; }
+                    if t != Type::I64 {
+                        return t;
+                    }
                 }
                 if let Some(b) = else_body {
                     let t = scan_param_type(name, b, env);
-                    if t != Type::I64 { return t; }
+                    if t != Type::I64 {
+                        return t;
+                    }
                 }
                 if let Some(b) = finally_body {
                     let t = scan_param_type(name, b, env);
-                    if t != Type::I64 { return t; }
+                    if t != Type::I64 {
+                        return t;
+                    }
                 }
             }
             _ => {}
@@ -716,21 +1003,45 @@ fn scan_expr_for_param(name: &str, expr: &Expr, env: &TypeEnv) -> Option<Type> {
                     let l_is_str = matches!(**left, Expr::StrLit(_));
                     let r_is_str = matches!(**right, Expr::StrLit(_));
                     if l_is_str || r_is_str {
-                        if let Expr::Ident(n) = &**left { if n == name { return Some(Type::Str); } }
-                        if let Expr::Ident(n) = &**right { if n == name { return Some(Type::Str); } }
+                        if let Expr::Ident(n) = &**left {
+                            if n == name {
+                                return Some(Type::Str);
+                            }
+                        }
+                        if let Expr::Ident(n) = &**right {
+                            if n == name {
+                                return Some(Type::Str);
+                            }
+                        }
                         if let Expr::Attribute(obj, attr) = &**left {
-                            if let Expr::Ident(n) = &**obj { if n == "self" && attr == name { return Some(Type::Str); } }
+                            if let Expr::Ident(n) = &**obj {
+                                if n == "self" && attr == name {
+                                    return Some(Type::Str);
+                                }
+                            }
                         }
                         if let Expr::Attribute(obj, attr) = &**right {
-                            if let Expr::Ident(n) = &**obj { if n == "self" && attr == name { return Some(Type::Str); } }
+                            if let Expr::Ident(n) = &**obj {
+                                if n == "self" && attr == name {
+                                    return Some(Type::Str);
+                                }
+                            }
                         }
                     }
-                    if let Some(t) = scan_expr_for_param(name, left, env) { return Some(t); }
-                    if let Some(t) = scan_expr_for_param(name, right, env) { return Some(t); }
+                    if let Some(t) = scan_expr_for_param(name, left, env) {
+                        return Some(t);
+                    }
+                    if let Some(t) = scan_expr_for_param(name, right, env) {
+                        return Some(t);
+                    }
                 }
                 _ => {
-                    if let Some(t) = scan_expr_for_param(name, left, env) { return Some(t); }
-                    if let Some(t) = scan_expr_for_param(name, right, env) { return Some(t); }
+                    if let Some(t) = scan_expr_for_param(name, left, env) {
+                        return Some(t);
+                    }
+                    if let Some(t) = scan_expr_for_param(name, right, env) {
+                        return Some(t);
+                    }
                 }
             }
             None
@@ -739,29 +1050,47 @@ fn scan_expr_for_param(name: &str, expr: &Expr, env: &TypeEnv) -> Option<Type> {
         Expr::Ident(n) if n == name => None,
         Expr::Attribute(obj, attr) => {
             if let Expr::Ident(self_name) = &**obj {
-                if self_name == "self" && attr == name { return None; }
+                if self_name == "self" && attr == name {
+                    return None;
+                }
             }
             None
         }
         Expr::Subscript(obj, _) => scan_expr_for_param(name, obj, env),
         Expr::MethodCall(obj, method, _) => {
-            if matches!(method.as_str(), "upper" | "lower" | "strip" | "replace" | "split" | "join" | "startswith" | "endswith") {
+            if matches!(
+                method.as_str(),
+                "upper"
+                    | "lower"
+                    | "strip"
+                    | "replace"
+                    | "split"
+                    | "join"
+                    | "startswith"
+                    | "endswith"
+            ) {
                 if let Expr::Ident(n) = obj.as_ref() {
-                    if n == name { return Some(Type::Str); }
+                    if n == name {
+                        return Some(Type::Str);
+                    }
                 }
             }
             None
         }
         Expr::FuncCall(_, args) => {
             for arg in args {
-                if let Some(t) = scan_expr_for_param(name, arg, env) { return Some(t); }
+                if let Some(t) = scan_expr_for_param(name, arg, env) {
+                    return Some(t);
+                }
             }
             None
         }
         Expr::FStr(parts) => {
             for p in parts {
                 if let Expr::Ident(n) = p {
-                    if n == name { return Some(Type::Str); }
+                    if n == name {
+                        return Some(Type::Str);
+                    }
                 }
             }
             None
@@ -779,16 +1108,22 @@ fn infer_return_type(stmts: &[Stmt], env: &mut TypeEnv) -> Type {
             }
             Stmt::Return(Some(expr)) => {
                 let t = env.infer_expr_type(expr);
-                if t != Type::Unit && t != Type::None && t != Type::Unknown { return t; }
+                if t != Type::Unit && t != Type::None && t != Type::Unknown {
+                    return t;
+                }
             }
             Stmt::If(branches, else_body) => {
                 for (_, body) in branches {
                     let t = infer_return_type(body, env);
-                    if t != Type::Unit && t != Type::None && t != Type::Unknown { return t; }
+                    if t != Type::Unit && t != Type::None && t != Type::Unknown {
+                        return t;
+                    }
                 }
                 if let Some(body) = else_body {
                     let t = infer_return_type(body, env);
-                    if t != Type::Unit && t != Type::None && t != Type::Unknown { return t; }
+                    if t != Type::Unit && t != Type::None && t != Type::Unknown {
+                        return t;
+                    }
                 }
             }
             Stmt::For(vars, iterable, body) => {
@@ -798,13 +1133,19 @@ fn infer_return_type(stmts: &[Stmt], env: &mut TypeEnv) -> Type {
                     Type::Str => Type::Str,
                     _ => Type::Unknown,
                 };
-                for var in vars { env.vars.insert(var.clone(), elem_type.clone()); }
+                for var in vars {
+                    env.vars.insert(var.clone(), elem_type.clone());
+                }
                 let t = infer_return_type(body, env);
-                if t != Type::Unit && t != Type::None && t != Type::Unknown { return t; }
+                if t != Type::Unit && t != Type::None && t != Type::Unknown {
+                    return t;
+                }
             }
             Stmt::While(_, body) => {
                 let t = infer_return_type(body, env);
-                if t != Type::Unit && t != Type::None && t != Type::Unknown { return t; }
+                if t != Type::Unit && t != Type::None && t != Type::Unknown {
+                    return t;
+                }
             }
             _ => {}
         }
@@ -833,7 +1174,8 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
         Stmt::Expr(e) => {
             let code = expr_to_rust(e, env, ctx);
             let is_embed = matches!(e, Expr::FuncCall(name, _) if name == "embed_rust");
-            let is_result = ctx.in_try && matches!(e, Expr::FuncCall(name, _) if env.fn_return.get(name).map_or(false, |t| matches!(t, Type::Result(_))));
+            let is_result = ctx.in_try
+                && matches!(e, Expr::FuncCall(name, _) if env.fn_return.get(name).map_or(false, |t| matches!(t, Type::Result(_))));
             if is_embed {
                 out.push_str(&format!("{}{}\n", indent(ctx.depth), code));
             } else if is_result {
@@ -844,23 +1186,42 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
         }
         Stmt::Assign(name, value, _is_mut) => {
             if name.starts_with("__setitem__(") {
-                let inner = name.trim_start_matches("__setitem__(").trim_end_matches(")");
+                let inner = name
+                    .trim_start_matches("__setitem__(")
+                    .trim_end_matches(")");
                 if let Expr::FuncCall(_, args) = value {
                     if args.len() == 2 {
                         let is_dict = matches!(env.vars.get(inner), Some(Type::Dict(_, _)));
                         let index_expr = if is_dict {
                             expr_to_rust(&args[0], env, ctx)
                         } else if let Expr::StrLit(s) = &args[0] {
-                            let escaped = s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n").replace('\t', "\\t").replace('\r', "\\r");
+                            let escaped = s
+                                .replace('\\', "\\\\")
+                                .replace('"', "\\\"")
+                                .replace('\n', "\\n")
+                                .replace('\t', "\\t")
+                                .replace('\r', "\\r");
                             format!("\"{}\"", escaped)
                         } else {
                             format!("&{}", expr_to_rust(&args[0], env, ctx))
                         };
                         let val_expr = expr_to_rust(&args[1], env, ctx);
                         if is_dict {
-                            out.push_str(&format!("{} {}.insert({}, {});\n", indent(ctx.depth), inner, index_expr, val_expr));
+                            out.push_str(&format!(
+                                "{} {}.insert({}, {});\n",
+                                indent(ctx.depth),
+                                inner,
+                                index_expr,
+                                val_expr
+                            ));
                         } else {
-                            out.push_str(&format!("{} {}[{}] = {};\n", indent(ctx.depth), inner, index_expr, val_expr));
+                            out.push_str(&format!(
+                                "{} {}[{}] = {};\n",
+                                indent(ctx.depth),
+                                inner,
+                                index_expr,
+                                val_expr
+                            ));
                         }
                         return;
                     }
@@ -881,9 +1242,19 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
                 out.push_str(&format!("{}{} = {};\n", indent(ctx.depth), name, val_code));
             } else {
                 if env.mutated.contains(name) {
-                    out.push_str(&format!("{}let mut {} = {};\n", indent(ctx.depth), name, val_code));
+                    out.push_str(&format!(
+                        "{}let mut {} = {};\n",
+                        indent(ctx.depth),
+                        name,
+                        val_code
+                    ));
                 } else {
-                    out.push_str(&format!("{}let {} = {};\n", indent(ctx.depth), name, val_code));
+                    out.push_str(&format!(
+                        "{}let {} = {};\n",
+                        indent(ctx.depth),
+                        name,
+                        val_code
+                    ));
                 }
                 ctx.declared.insert(name.clone());
                 env.vars.insert(name.clone(), val_type);
@@ -897,13 +1268,28 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
             if !tmp_exists {
                 let all_mut = names.iter().any(|n| env.mutated.contains(n));
                 if all_mut {
-                    out.push_str(&format!("{}let mut {} = {};\n", indent(ctx.depth), tmp_var, val_code));
+                    out.push_str(&format!(
+                        "{}let mut {} = {};\n",
+                        indent(ctx.depth),
+                        tmp_var,
+                        val_code
+                    ));
                 } else {
-                    out.push_str(&format!("{}let {} = {};\n", indent(ctx.depth), tmp_var, val_code));
+                    out.push_str(&format!(
+                        "{}let {} = {};\n",
+                        indent(ctx.depth),
+                        tmp_var,
+                        val_code
+                    ));
                 }
                 ctx.declared.insert(tmp_var.clone());
             } else {
-                out.push_str(&format!("{}{} = {};\n", indent(ctx.depth), tmp_var, val_code));
+                out.push_str(&format!(
+                    "{}{} = {};\n",
+                    indent(ctx.depth),
+                    tmp_var,
+                    val_code
+                ));
             }
 
             for (i, name) in names.iter().enumerate() {
@@ -912,11 +1298,21 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
                 if exists {
                     out.push_str(&format!("{}{} = {};\n", indent(ctx.depth), name, element));
                 } else if env.mutated.contains(name) {
-                    out.push_str(&format!("{}let mut {} = {};\n", indent(ctx.depth), name, element));
+                    out.push_str(&format!(
+                        "{}let mut {} = {};\n",
+                        indent(ctx.depth),
+                        name,
+                        element
+                    ));
                     ctx.declared.insert(name.clone());
                     env.vars.insert(name.clone(), Type::Unknown);
                 } else {
-                    out.push_str(&format!("{}let {} = {};\n", indent(ctx.depth), name, element));
+                    out.push_str(&format!(
+                        "{}let {} = {};\n",
+                        indent(ctx.depth),
+                        name,
+                        element
+                    ));
                     ctx.declared.insert(name.clone());
                     env.vars.insert(name.clone(), Type::Unknown);
                 }
@@ -925,29 +1321,54 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
         Stmt::AugAssign(name, op, value) => {
             let val_code = expr_to_rust(value, env, ctx);
             let op_str = match op {
-                BinOp::Add => "+=", BinOp::Sub => "-=", BinOp::Mul => "*=",
-                BinOp::Div => "/=", BinOp::Mod => "%=", _ => "+=",
+                BinOp::Add => "+=",
+                BinOp::Sub => "-=",
+                BinOp::Mul => "*=",
+                BinOp::Div => "/=",
+                BinOp::Mod => "%=",
+                _ => "+=",
             };
             let mapped_name = if let Some(ref _cn) = ctx.current_class {
-                if name.starts_with("self.") { name.replacen("self.", "", 1) } else { name.clone() }
-            } else { name.clone() };
-            out.push_str(&format!("{}{} {} {};\n", indent(ctx.depth), mapped_name, op_str, val_code));
+                if name.starts_with("self.") {
+                    name.replacen("self.", "", 1)
+                } else {
+                    name.clone()
+                }
+            } else {
+                name.clone()
+            };
+            out.push_str(&format!(
+                "{}{} {} {};\n",
+                indent(ctx.depth),
+                mapped_name,
+                op_str,
+                val_code
+            ));
         }
         Stmt::If(branches, else_body) => {
             for (i, (cond, body)) in branches.iter().enumerate() {
                 let cond_code = expr_to_rust(cond, env, ctx);
                 let prefix = if i == 0 { "if" } else { "} else if" };
-                out.push_str(&format!("{}{} {} {{\n", indent(ctx.depth), prefix, cond_code));
+                out.push_str(&format!(
+                    "{}{} {} {{\n",
+                    indent(ctx.depth),
+                    prefix,
+                    cond_code
+                ));
                 let old_depth = ctx.depth;
                 ctx.depth += 1;
-                for s in body { stmt_to_rust(s, env, ctx, out); }
+                for s in body {
+                    stmt_to_rust(s, env, ctx, out);
+                }
                 ctx.depth = old_depth;
             }
             if let Some(else_body) = else_body {
                 out.push_str(&format!("{}}} else {{\n", indent(ctx.depth)));
                 let old_depth = ctx.depth;
                 ctx.depth += 1;
-                for s in else_body { stmt_to_rust(s, env, ctx, out); }
+                for s in else_body {
+                    stmt_to_rust(s, env, ctx, out);
+                }
                 ctx.depth = old_depth;
             }
             out.push_str(&format!("{}}}\n", indent(ctx.depth)));
@@ -957,7 +1378,9 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
             out.push_str(&format!("{}while {} {{\n", indent(ctx.depth), cond_code));
             let old_depth = ctx.depth;
             ctx.depth += 1;
-            for s in body { stmt_to_rust(s, env, ctx, out); }
+            for s in body {
+                stmt_to_rust(s, env, ctx, out);
+            }
             ctx.depth = old_depth;
             out.push_str(&format!("{}}}\n", indent(ctx.depth)));
         }
@@ -971,37 +1394,73 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
             };
 
             if let Type::List(inner) = &iter_type {
-                let by = if is_copy_type(inner) { "copied()" } else { "cloned()" };
-                out.push_str(&format!("{}for {} in {}.iter().{} {{\n", indent(ctx.depth), target, iter_code, by));
+                let by = if is_copy_type(inner) {
+                    "copied()"
+                } else {
+                    "cloned()"
+                };
+                out.push_str(&format!(
+                    "{}for {} in {}.iter().{} {{\n",
+                    indent(ctx.depth),
+                    target,
+                    iter_code,
+                    by
+                ));
             } else if matches!(&iter_type, Type::Str) {
-                out.push_str(&format!("{}for {} in {}.chars() {{\n", indent(ctx.depth), target, iter_code));
+                out.push_str(&format!(
+                    "{}for {} in {}.chars() {{\n",
+                    indent(ctx.depth),
+                    target,
+                    iter_code
+                ));
             } else {
-                out.push_str(&format!("{}for {} in {} {{\n", indent(ctx.depth), target, strip_parens(&iter_code)));
+                out.push_str(&format!(
+                    "{}for {} in {} {{\n",
+                    indent(ctx.depth),
+                    target,
+                    strip_parens(&iter_code)
+                ));
             }
             let old_depth = ctx.depth;
             ctx.depth += 1;
-            for s in body { stmt_to_rust(s, env, ctx, out); }
+            for s in body {
+                stmt_to_rust(s, env, ctx, out);
+            }
             ctx.depth = old_depth;
             out.push_str(&format!("{}}}\n", indent(ctx.depth)));
         }
-        Stmt::FuncDef { name, params, body, return_type: _, decorators } => {
+        Stmt::FuncDef {
+            name,
+            params,
+            body,
+            return_type: _,
+            decorators,
+        } => {
             let old_fn = ctx.current_fn.clone();
             ctx.current_fn = Some(name.clone());
 
-            let param_types: Vec<(String, Type)> = params.iter().enumerate().map(|(i, (n, _))| {
-                if n.starts_with("*") {
-                    (n.clone(), Type::List(Box::new(Type::I64)))
-                } else if i == 0 && ctx.decorator_fn_types.contains_key(name) {
-                    let t = ctx.decorator_fn_types.get(name).cloned().unwrap();
-                    (n.clone(), t)
-                } else {
-                    let existing = env.vars.get(n).cloned();
-                    let mut t = existing.unwrap_or_else(|| scan_param_type(n, body, env));
-                    if matches!(t, Type::Unknown | Type::Any) { t = guess_type_from_name(n); }
-                    if t == Type::Unknown { t = Type::Str; }
-                    (n.clone(), t)
-                }
-            }).collect();
+            let param_types: Vec<(String, Type)> = params
+                .iter()
+                .enumerate()
+                .map(|(i, (n, _))| {
+                    if n.starts_with("*") {
+                        (n.clone(), Type::List(Box::new(Type::I64)))
+                    } else if i == 0 && ctx.decorator_fn_types.contains_key(name) {
+                        let t = ctx.decorator_fn_types.get(name).cloned().unwrap();
+                        (n.clone(), t)
+                    } else {
+                        let existing = env.vars.get(n).cloned();
+                        let mut t = existing.unwrap_or_else(|| scan_param_type(n, body, env));
+                        if matches!(t, Type::Unknown | Type::Any) {
+                            t = guess_type_from_name(n);
+                        }
+                        if t == Type::Unknown {
+                            t = Type::Str;
+                        }
+                        (n.clone(), t)
+                    }
+                })
+                .collect();
 
             for (pn, pt) in &param_types {
                 env.vars.insert(pn.clone(), pt.clone());
@@ -1020,14 +1479,17 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
             };
             env.fn_return.insert(name.clone(), ret_type.clone());
 
-            let params_rust: Vec<String> = param_types.iter().map(|(n, t)| {
-                if n.starts_with("*") {
-                    let bare = n.trim_start_matches('*');
-                    format!("{}: Vec<{}>", bare, "i64")
-                } else {
-                    format!("{}: {}", n, t)
-                }
-            }).collect();
+            let params_rust: Vec<String> = param_types
+                .iter()
+                .map(|(n, t)| {
+                    if n.starts_with("*") {
+                        let bare = n.trim_start_matches('*');
+                        format!("{}: Vec<{}>", bare, "i64")
+                    } else {
+                        format!("{}: {}", n, t)
+                    }
+                })
+                .collect();
 
             let return_type_str = ret_type.to_string();
             let old_fn_vars = env.vars.clone();
@@ -1039,35 +1501,76 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
 
             if !decorators.is_empty() {
                 let inner_name = format!("{}_impl", name);
-                out.push_str(&format!("{}pub fn {}({}) -> {} {{\n", indent(ctx.depth), inner_name, params_rust.join(", "), return_type_str));
+                out.push_str(&format!(
+                    "{}pub fn {}({}) -> {} {{\n",
+                    indent(ctx.depth),
+                    inner_name,
+                    params_rust.join(", "),
+                    return_type_str
+                ));
                 let dec_depth = ctx.depth;
                 ctx.depth += 1;
-                if has_raise { ctx.has_raise = true; }
-                for s in body { stmt_to_rust(s, env, ctx, out); }
-                if has_raise { ctx.has_raise = false; }
+                if has_raise {
+                    ctx.has_raise = true;
+                }
+                for s in body {
+                    stmt_to_rust(s, env, ctx, out);
+                }
+                if has_raise {
+                    ctx.has_raise = false;
+                }
                 ctx.depth = dec_depth;
                 out.push_str(&format!("{}}}\n\n", indent(ctx.depth)));
                 let decorator = &decorators[0];
-                let inner_params: Vec<String> = params.iter().map(|(n, _)| {
-                    if n.starts_with("*") {
-                        format!("{}", n.trim_start_matches('*'))
-                    } else {
-                        n.clone()
-                    }
-                }).collect();
+                let inner_params: Vec<String> = params
+                    .iter()
+                    .map(|(n, _)| {
+                        if n.starts_with("*") {
+                            format!("{}", n.trim_start_matches('*'))
+                        } else {
+                            n.clone()
+                        }
+                    })
+                    .collect();
                 let wrap_depth = ctx.depth;
-                out.push_str(&format!("{}pub fn {}({}) -> {} {{\n", indent(ctx.depth), name, params_rust.join(", "), return_type_str));
+                out.push_str(&format!(
+                    "{}pub fn {}({}) -> {} {{\n",
+                    indent(ctx.depth),
+                    name,
+                    params_rust.join(", "),
+                    return_type_str
+                ));
                 ctx.depth += 1;
-                out.push_str(&format!("{}{}({});\n{} {}({})\n", indent(ctx.depth), decorator, inner_name, indent(ctx.depth), inner_name, inner_params.join(", ")));
+                out.push_str(&format!(
+                    "{}{}({});\n{} {}({})\n",
+                    indent(ctx.depth),
+                    decorator,
+                    inner_name,
+                    indent(ctx.depth),
+                    inner_name,
+                    inner_params.join(", ")
+                ));
                 ctx.depth = wrap_depth;
                 out.push_str(&format!("{}}}\n\n", indent(ctx.depth)));
             } else {
-                out.push_str(&format!("{}pub fn {}({}) -> {} {{\n", indent(ctx.depth), name, params_rust.join(", "), return_type_str));
+                out.push_str(&format!(
+                    "{}pub fn {}({}) -> {} {{\n",
+                    indent(ctx.depth),
+                    name,
+                    params_rust.join(", "),
+                    return_type_str
+                ));
                 let old_depth = ctx.depth;
                 ctx.depth += 1;
-                if has_raise { ctx.has_raise = true; }
-                for s in body { stmt_to_rust(s, env, ctx, out); }
-                if has_raise { ctx.has_raise = false; }
+                if has_raise {
+                    ctx.has_raise = true;
+                }
+                for s in body {
+                    stmt_to_rust(s, env, ctx, out);
+                }
+                if has_raise {
+                    ctx.has_raise = false;
+                }
                 ctx.depth = old_depth;
                 out.push_str(&format!("{}}}\n\n", indent(ctx.depth)));
             }
@@ -1076,7 +1579,12 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
             env.vars = old_fn_vars;
             ctx.current_fn = old_fn;
         }
-        Stmt::ClassDef { name, bases: _, body, decorators } => {
+        Stmt::ClassDef {
+            name,
+            bases: _,
+            body,
+            decorators,
+        } => {
             let old_class = ctx.current_class.clone();
             ctx.current_class = Some(name.clone());
 
@@ -1085,11 +1593,20 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
 
             let mut field_names = HashSet::new();
             for stmt in body {
-                if let Stmt::FuncDef { name: mname, params, body: mbody, .. } = stmt {
+                if let Stmt::FuncDef {
+                    name: mname,
+                    params,
+                    body: mbody,
+                    ..
+                } = stmt
+                {
                     if mname == "__init__" {
                         for p in params {
                             if p.0 != "self" && !p.0.starts_with("*") {
-                                let ft = env.vars.get(&p.0).cloned()
+                                let ft = env
+                                    .vars
+                                    .get(&p.0)
+                                    .cloned()
                                     .unwrap_or_else(|| scan_param_type(&p.0, mbody, env));
                                 if field_names.insert(p.0.clone()) {
                                     fields.push((p.0.clone(), ft));
@@ -1113,7 +1630,13 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
             }
 
             for d in decorators.iter().rev() {
-                out.push_str(&format!("{}let {} = {}({});\n", indent(ctx.depth), name, d, name));
+                out.push_str(&format!(
+                    "{}let {} = {}({});\n",
+                    indent(ctx.depth),
+                    name,
+                    d,
+                    name
+                ));
             }
 
             out.push_str(&format!("{}pub struct {} {{\n", indent(ctx.depth), name));
@@ -1129,30 +1652,60 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
             ctx.depth += 1;
 
             for method in &methods {
-                if let Stmt::FuncDef { name: mname, params, body: mbody, return_type: _, decorators: _ } = method {
-                    let mutates_self = mbody.iter().any(|s| matches!(s, Stmt::Assign(name, _, _) if name.starts_with("self.")));
-                    let mparams_rust: Vec<String> = params.iter().map(|(n, _)| {
-                        if n == "self" {
-                            if mname == "__init__" { "".to_string() }
-                            else if mutates_self { "&mut self".to_string() }
-                            else { "&self".to_string() }
-                        } else {
-                            let existing = env.vars.get(n).cloned();
-                            let t = existing.unwrap_or_else(|| scan_param_type(n, mbody, env));
-                            format!("{}: {}", n, t)
-                        }
-                    }).collect();
+                if let Stmt::FuncDef {
+                    name: mname,
+                    params,
+                    body: mbody,
+                    return_type: _,
+                    decorators: _,
+                } = method
+                {
+                    let mutates_self = mbody.iter().any(
+                        |s| matches!(s, Stmt::Assign(name, _, _) if name.starts_with("self.")),
+                    );
+                    let mparams_rust: Vec<String> = params
+                        .iter()
+                        .map(|(n, _)| {
+                            if n == "self" {
+                                if mname == "__init__" {
+                                    "".to_string()
+                                } else if mutates_self {
+                                    "&mut self".to_string()
+                                } else {
+                                    "&self".to_string()
+                                }
+                            } else {
+                                let existing = env.vars.get(n).cloned();
+                                let t = existing.unwrap_or_else(|| scan_param_type(n, mbody, env));
+                                format!("{}: {}", n, t)
+                            }
+                        })
+                        .collect();
 
                     let inferred_mret = infer_return_type(mbody, env);
                     if inferred_mret != Type::Unit && inferred_mret != Type::Unknown {
                         env.fn_return.insert(mname.clone(), inferred_mret);
                     }
-                    let mret_str = env.fn_return.get(mname).map(|t| t.to_string()).unwrap_or_else(|| "()".to_string());
+                    let mret_str = env
+                        .fn_return
+                        .get(mname)
+                        .map(|t| t.to_string())
+                        .unwrap_or_else(|| "()".to_string());
 
                     if mname == "__init__" {
-                        out.push_str(&format!("{}pub fn new({}) -> Self {{\n", indent(ctx.depth), mparams_rust[1..].join(", ")));
+                        out.push_str(&format!(
+                            "{}pub fn new({}) -> Self {{\n",
+                            indent(ctx.depth),
+                            mparams_rust[1..].join(", ")
+                        ));
                     } else {
-                        out.push_str(&format!("{}pub fn {}({}) -> {} {{\n", indent(ctx.depth), mname, mparams_rust.join(", "), mret_str));
+                        out.push_str(&format!(
+                            "{}pub fn {}({}) -> {} {{\n",
+                            indent(ctx.depth),
+                            mname,
+                            mparams_rust.join(", "),
+                            mret_str
+                        ));
                     }
 
                     let old_fn = ctx.current_fn.clone();
@@ -1174,20 +1727,29 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
                                 if name.starts_with("self.") {
                                     let init_expr = expr_to_rust(value, env, ctx);
                                     let field_name = name.replacen("self.", "", 1);
-                                    field_inits.push(format!("{}{}: {},\n", indent(ctx.depth), field_name, init_expr));
+                                    field_inits.push(format!(
+                                        "{}{}: {},\n",
+                                        indent(ctx.depth),
+                                        field_name,
+                                        init_expr
+                                    ));
                                     continue;
                                 }
                             }
                             stmt_to_rust(s, env, ctx, out);
                         }
                     } else {
-                        for s in mbody { stmt_to_rust(s, env, ctx, out); }
+                        for s in mbody {
+                            stmt_to_rust(s, env, ctx, out);
+                        }
                     }
                     ctx.current_fn = old_fn;
 
                     if mname == "__init__" {
                         out.push_str(&format!("{}Self {{\n", indent(ctx.depth)));
-                        for fi in &field_inits { out.push_str(fi); }
+                        for fi in &field_inits {
+                            out.push_str(fi);
+                        }
                         if field_inits.is_empty() {
                             out.push_str(&format!("{}_dummy: (),\n", indent(ctx.depth)));
                         }
@@ -1220,8 +1782,12 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
                 out.push_str(&format!("{}return;\n", indent(ctx.depth)));
             }
         }
-        Stmt::Break => { out.push_str(&format!("{}break;\n", indent(ctx.depth))); }
-        Stmt::Continue => { out.push_str(&format!("{}continue;\n", indent(ctx.depth))); }
+        Stmt::Break => {
+            out.push_str(&format!("{}break;\n", indent(ctx.depth)));
+        }
+        Stmt::Continue => {
+            out.push_str(&format!("{}continue;\n", indent(ctx.depth)));
+        }
         Stmt::Pass => {}
         Stmt::Import(module, alias) => {
             let mut is_molotov = false;
@@ -1233,8 +1799,15 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
                         if let Ok(tokens) = tokenize(&source) {
                             let mut parser = Parser::new(tokens);
                             if let Ok(program) = parser.parse_program() {
-                                if let Ok(code) = transpile_with_dir_recursive(&program, path.parent().unwrap().to_str().unwrap(), &mut ctx.processed_modules) {
-                                    ctx.module_code.push_str(&format!("pub mod {} {{\n{}\n}}\n", internal_mod_name, code));
+                                if let Ok(code) = transpile_with_dir_recursive(
+                                    &program,
+                                    path.parent().unwrap().to_str().unwrap(),
+                                    &mut ctx.processed_modules,
+                                ) {
+                                    ctx.module_code.push_str(&format!(
+                                        "pub mod {} {{\n{}\n}}\n",
+                                        internal_mod_name, code
+                                    ));
                                     is_molotov = true;
                                 }
                             }
@@ -1248,15 +1821,33 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
             if is_molotov {
                 if let Some(a) = alias {
                     ctx.module_names.insert(a.clone());
-                    out.push_str(&format!("{}use {} as {};\n", indent(ctx.depth), internal_mod_name, a));
+                    out.push_str(&format!(
+                        "{}use {} as {};\n",
+                        indent(ctx.depth),
+                        internal_mod_name,
+                        a
+                    ));
                 } else {
                     let mod_name = module.split("::").last().unwrap();
                     ctx.module_names.insert(mod_name.to_string());
-                    out.push_str(&format!("{}use {} as {};\n", indent(ctx.depth), internal_mod_name, mod_name));
+                    out.push_str(&format!(
+                        "{}use {} as {};\n",
+                        indent(ctx.depth),
+                        internal_mod_name,
+                        mod_name
+                    ));
                 }
             } else {
-                let alias_str = alias.as_ref().map(|a| format!(" as {}", a)).unwrap_or_default();
-                out.push_str(&format!("{}use {}{};\n", indent(ctx.depth), module, alias_str));
+                let alias_str = alias
+                    .as_ref()
+                    .map(|a| format!(" as {}", a))
+                    .unwrap_or_default();
+                out.push_str(&format!(
+                    "{}use {}{};\n",
+                    indent(ctx.depth),
+                    module,
+                    alias_str
+                ));
             }
         }
         Stmt::FromImport(module, names) => {
@@ -1269,8 +1860,15 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
                         if let Ok(tokens) = tokenize(&source) {
                             let mut parser = Parser::new(tokens);
                             if let Ok(program) = parser.parse_program() {
-                                if let Ok(code) = transpile_with_dir_recursive(&program, path.parent().unwrap().to_str().unwrap(), &mut ctx.processed_modules) {
-                                    ctx.module_code.push_str(&format!("pub mod {} {{\n{}\n}}\n", internal_mod_name, code));
+                                if let Ok(code) = transpile_with_dir_recursive(
+                                    &program,
+                                    path.parent().unwrap().to_str().unwrap(),
+                                    &mut ctx.processed_modules,
+                                ) {
+                                    ctx.module_code.push_str(&format!(
+                                        "pub mod {} {{\n{}\n}}\n",
+                                        internal_mod_name, code
+                                    ));
                                     is_molotov = true;
                                 }
                             }
@@ -1281,34 +1879,64 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
                 is_molotov = true;
             }
 
-            let names_str: Vec<String> = names.iter().map(|(name, alias)| {
-                if let Some(a) = alias { format!("{} as {}", name, a) }
-                else { name.clone() }
-            }).collect();
-            
-            let mod_use_path = if is_molotov { &internal_mod_name } else { module };
-            out.push_str(&format!("{}use {}::{{{}}};\n", indent(ctx.depth), mod_use_path, names_str.join(", ")));
+            let names_str: Vec<String> = names
+                .iter()
+                .map(|(name, alias)| {
+                    if let Some(a) = alias {
+                        format!("{} as {}", name, a)
+                    } else {
+                        name.clone()
+                    }
+                })
+                .collect();
+
+            let mod_use_path = if is_molotov {
+                &internal_mod_name
+            } else {
+                module
+            };
+            out.push_str(&format!(
+                "{}use {}::{{{}}};\n",
+                indent(ctx.depth),
+                mod_use_path,
+                names_str.join(", ")
+            ));
         }
-        Stmt::Try { body, handlers, else_body, finally_body } => {
-            out.push_str(&format!("{}(|| -> Result<(), String> {{\n", indent(ctx.depth)));
+        Stmt::Try {
+            body,
+            handlers,
+            else_body,
+            finally_body,
+        } => {
+            out.push_str(&format!(
+                "{}(|| -> Result<(), String> {{\n",
+                indent(ctx.depth)
+            ));
             let old_depth = ctx.depth;
             ctx.depth += 1;
             let old_declared = ctx.declared.clone();
             let old_try = ctx.in_try;
             ctx.in_try = true;
-            for s in body { stmt_to_rust(s, env, ctx, out); }
+            for s in body {
+                stmt_to_rust(s, env, ctx, out);
+            }
             ctx.in_try = old_try;
             out.push_str(&format!("{}Ok(())\n", indent(ctx.depth)));
             ctx.declared = old_declared;
             ctx.depth = old_depth;
-            out.push_str(&format!("{}}})().unwrap_or_else(|e| {{\n", indent(ctx.depth)));
+            out.push_str(&format!(
+                "{}}})().unwrap_or_else(|e| {{\n",
+                indent(ctx.depth)
+            ));
             ctx.depth += 1;
 
             if !handlers.is_empty() {
                 let handler = &handlers[0];
                 out.push_str(&format!("{}let _err = e;\n", indent(ctx.depth)));
                 let old_handler_declared = ctx.declared.clone();
-                for s in &handler.body { stmt_to_rust(s, env, ctx, out); }
+                for s in &handler.body {
+                    stmt_to_rust(s, env, ctx, out);
+                }
                 ctx.declared = old_handler_declared;
             }
 
@@ -1316,10 +1944,14 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
             out.push_str(&format!("{}}});\n", indent(ctx.depth)));
 
             if let Some(else_body) = else_body {
-                for s in else_body { stmt_to_rust(s, env, ctx, out); }
+                for s in else_body {
+                    stmt_to_rust(s, env, ctx, out);
+                }
             }
             if let Some(finally_body) = finally_body {
-                for s in finally_body { stmt_to_rust(s, env, ctx, out); }
+                for s in finally_body {
+                    stmt_to_rust(s, env, ctx, out);
+                }
             }
         }
         Stmt::Raise(expr) => {
@@ -1327,7 +1959,10 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
                 let code = expr_to_rust(expr, env, ctx);
                 out.push_str(&format!("{}return Err({});\n", indent(ctx.depth), code));
             } else {
-                out.push_str(&format!("{}return Err(String::new());\n", indent(ctx.depth)));
+                out.push_str(&format!(
+                    "{}return Err(String::new());\n",
+                    indent(ctx.depth)
+                ));
             }
         }
         Stmt::With { expr, var, body } => {
@@ -1335,9 +1970,16 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
             out.push_str(&format!("{}{{\n", indent(ctx.depth)));
             ctx.depth += 1;
             if let Some(var) = var {
-                out.push_str(&format!("{}let mut {} = {};\n", indent(ctx.depth), var, expr_code));
+                out.push_str(&format!(
+                    "{}let mut {} = {};\n",
+                    indent(ctx.depth),
+                    var,
+                    expr_code
+                ));
             }
-            for s in body { stmt_to_rust(s, env, ctx, out); }
+            for s in body {
+                stmt_to_rust(s, env, ctx, out);
+            }
             ctx.depth -= 1;
             out.push_str(&format!("{}}}\n", indent(ctx.depth)));
         }
@@ -1359,12 +2001,22 @@ fn scan_mutated(stmts: &[Stmt], env: &mut TypeEnv, mutating_methods: &HashSet<St
     }
 }
 
-fn scan_stmt_mutated(stmt: &Stmt, declared: &mut HashSet<String>, env: &mut TypeEnv, mutating_methods: &HashSet<String>) {
+fn scan_stmt_mutated(
+    stmt: &Stmt,
+    declared: &mut HashSet<String>,
+    env: &mut TypeEnv,
+    mutating_methods: &HashSet<String>,
+) {
     match stmt {
         Stmt::Assign(name, value, _) => {
             if name.starts_with("__setitem__(") {
-                let inner = name.trim_start_matches("__setitem__(").trim_end_matches(")");
-                if !inner.is_empty() { declared.insert(inner.to_string()); env.mutated.insert(inner.to_string()); }
+                let inner = name
+                    .trim_start_matches("__setitem__(")
+                    .trim_end_matches(")");
+                if !inner.is_empty() {
+                    declared.insert(inner.to_string());
+                    env.mutated.insert(inner.to_string());
+                }
             } else if declared.contains(name) {
                 env.mutated.insert(name.clone());
             } else {
@@ -1374,60 +2026,114 @@ fn scan_stmt_mutated(stmt: &Stmt, declared: &mut HashSet<String>, env: &mut Type
         }
         Stmt::AssignTuple(names, value) => {
             for n in names {
-                if declared.contains(n) { env.mutated.insert(n.clone()); }
-                else { declared.insert(n.clone()); }
+                if declared.contains(n) {
+                    env.mutated.insert(n.clone());
+                } else {
+                    declared.insert(n.clone());
+                }
             }
             scan_expr_mutated(value, declared, env, mutating_methods);
         }
-        Stmt::AugAssign(name, _, _) => { declared.insert(name.clone()); env.mutated.insert(name.clone()); }
-        Stmt::Expr(e) => { scan_expr_mutated(e, declared, env, mutating_methods); }
+        Stmt::AugAssign(name, _, _) => {
+            declared.insert(name.clone());
+            env.mutated.insert(name.clone());
+        }
+        Stmt::Expr(e) => {
+            scan_expr_mutated(e, declared, env, mutating_methods);
+        }
         Stmt::For(vars, iterable, body) => {
-            for var in vars { declared.insert(var.clone()); }
+            for var in vars {
+                declared.insert(var.clone());
+            }
             scan_expr_mutated(iterable, declared, env, mutating_methods);
-            for s in body { scan_stmt_mutated(s, declared, env, mutating_methods); }
+            for s in body {
+                scan_stmt_mutated(s, declared, env, mutating_methods);
+            }
         }
         Stmt::While(cond, body) => {
             scan_expr_mutated(cond, declared, env, mutating_methods);
-            for s in body { scan_stmt_mutated(s, declared, env, mutating_methods); }
+            for s in body {
+                scan_stmt_mutated(s, declared, env, mutating_methods);
+            }
         }
         Stmt::If(branches, else_body) => {
             for (cond, body) in branches {
                 scan_expr_mutated(cond, declared, env, mutating_methods);
-                for s in body { scan_stmt_mutated(s, declared, env, mutating_methods); }
+                for s in body {
+                    scan_stmt_mutated(s, declared, env, mutating_methods);
+                }
             }
             if let Some(body) = else_body {
-                for s in body { scan_stmt_mutated(s, declared, env, mutating_methods); }
+                for s in body {
+                    scan_stmt_mutated(s, declared, env, mutating_methods);
+                }
             }
         }
-        Stmt::Return(Some(e)) => { scan_expr_mutated(e, declared, env, mutating_methods); }
+        Stmt::Return(Some(e)) => {
+            scan_expr_mutated(e, declared, env, mutating_methods);
+        }
         Stmt::FuncDef { body, .. } => {
             let mut fn_declared: HashSet<String> = HashSet::new();
-            for s in body { scan_stmt_mutated(s, &mut fn_declared, env, mutating_methods); }
+            for s in body {
+                scan_stmt_mutated(s, &mut fn_declared, env, mutating_methods);
+            }
         }
         Stmt::ClassDef { body, .. } => {
-            for s in body { scan_stmt_mutated(s, declared, env, mutating_methods); }
+            for s in body {
+                scan_stmt_mutated(s, declared, env, mutating_methods);
+            }
         }
-        Stmt::Try { body, handlers, else_body, finally_body } => {
-            for s in body { scan_stmt_mutated(s, declared, env, mutating_methods); }
-            for h in handlers { for s in &h.body { scan_stmt_mutated(s, declared, env, mutating_methods); } }
-            if let Some(b) = else_body { for s in b { scan_stmt_mutated(s, declared, env, mutating_methods); } }
-            if let Some(b) = finally_body { for s in b { scan_stmt_mutated(s, declared, env, mutating_methods); } }
+        Stmt::Try {
+            body,
+            handlers,
+            else_body,
+            finally_body,
+        } => {
+            for s in body {
+                scan_stmt_mutated(s, declared, env, mutating_methods);
+            }
+            for h in handlers {
+                for s in &h.body {
+                    scan_stmt_mutated(s, declared, env, mutating_methods);
+                }
+            }
+            if let Some(b) = else_body {
+                for s in b {
+                    scan_stmt_mutated(s, declared, env, mutating_methods);
+                }
+            }
+            if let Some(b) = finally_body {
+                for s in b {
+                    scan_stmt_mutated(s, declared, env, mutating_methods);
+                }
+            }
         }
         Stmt::With { expr, body, .. } => {
             scan_expr_mutated(expr, declared, env, mutating_methods);
-            for s in body { scan_stmt_mutated(s, declared, env, mutating_methods); }
+            for s in body {
+                scan_stmt_mutated(s, declared, env, mutating_methods);
+            }
         }
         Stmt::Delete(names) => {
-            for n in names { env.mutated.insert(n.clone()); }
+            for n in names {
+                env.mutated.insert(n.clone());
+            }
         }
         _ => {}
     }
 }
 
-fn scan_expr_mutated(expr: &Expr, declared: &mut HashSet<String>, env: &mut TypeEnv, mutating_methods: &HashSet<String>) {
+fn scan_expr_mutated(
+    expr: &Expr,
+    declared: &mut HashSet<String>,
+    env: &mut TypeEnv,
+    mutating_methods: &HashSet<String>,
+) {
     match expr {
         Expr::MethodCall(obj, method, args) => {
-            let mut mutating: Vec<&str> = vec!["append", "push", "pop", "insert", "remove", "sort", "reverse", "clear", "popitem"];
+            let mut mutating: Vec<&str> = vec![
+                "append", "push", "pop", "insert", "remove", "sort", "reverse", "clear", "popitem",
+            ];
             if mutating_methods.contains(method) {
                 mutating.push(method);
             }
@@ -1438,7 +2144,9 @@ fn scan_expr_mutated(expr: &Expr, declared: &mut HashSet<String>, env: &mut Type
                 }
             }
             scan_expr_mutated(obj, declared, env, mutating_methods);
-            for a in args { scan_expr_mutated(a, declared, env, mutating_methods); }
+            for a in args {
+                scan_expr_mutated(a, declared, env, mutating_methods);
+            }
         }
         Expr::FuncCall(name, args) => {
             let mutating_funcs = ["shuffle"];
@@ -1448,19 +2156,42 @@ fn scan_expr_mutated(expr: &Expr, declared: &mut HashSet<String>, env: &mut Type
                     env.mutated.insert(first.clone());
                 }
             }
-            for a in args { scan_expr_mutated(a, declared, env, mutating_methods); }
+            for a in args {
+                scan_expr_mutated(a, declared, env, mutating_methods);
+            }
         }
-        Expr::BinOp(l, _, r) => { scan_expr_mutated(l, declared, env, mutating_methods); scan_expr_mutated(r, declared, env, mutating_methods); }
+        Expr::BinOp(l, _, r) => {
+            scan_expr_mutated(l, declared, env, mutating_methods);
+            scan_expr_mutated(r, declared, env, mutating_methods);
+        }
         Expr::UnaryOp(_, e) => scan_expr_mutated(e, declared, env, mutating_methods),
-        Expr::Subscript(obj, idx) => { scan_expr_mutated(obj, declared, env, mutating_methods); scan_expr_mutated(idx, declared, env, mutating_methods); }
-        Expr::List(items) => { for i in items { scan_expr_mutated(i, declared, env, mutating_methods); } }
-        Expr::Dict(pairs) => { for (k, v) in pairs { scan_expr_mutated(k, declared, env, mutating_methods); scan_expr_mutated(v, declared, env, mutating_methods); } }
-        Expr::Tuple(items) => { for i in items { scan_expr_mutated(i, declared, env, mutating_methods); } }
+        Expr::Subscript(obj, idx) => {
+            scan_expr_mutated(obj, declared, env, mutating_methods);
+            scan_expr_mutated(idx, declared, env, mutating_methods);
+        }
+        Expr::List(items) => {
+            for i in items {
+                scan_expr_mutated(i, declared, env, mutating_methods);
+            }
+        }
+        Expr::Dict(pairs) => {
+            for (k, v) in pairs {
+                scan_expr_mutated(k, declared, env, mutating_methods);
+                scan_expr_mutated(v, declared, env, mutating_methods);
+            }
+        }
+        Expr::Tuple(items) => {
+            for i in items {
+                scan_expr_mutated(i, declared, env, mutating_methods);
+            }
+        }
         Expr::Starred(e) => scan_expr_mutated(e, declared, env, mutating_methods),
         Expr::Comp(c) => {
             for g in &c.generators {
                 scan_expr_mutated(&g.iter, declared, env, mutating_methods);
-                if let Some(cond) = &g.cond { scan_expr_mutated(cond, declared, env, mutating_methods); }
+                if let Some(cond) = &g.cond {
+                    scan_expr_mutated(cond, declared, env, mutating_methods);
+                }
             }
         }
         Expr::Attribute(obj, _) => scan_expr_mutated(obj, declared, env, mutating_methods),
@@ -1476,16 +2207,38 @@ pub fn transpile_with_dir(program: &Program, source_dir: &str) -> Result<String,
     transpile_with_dir_recursive(program, source_dir, &mut HashSet::new())
 }
 
-fn transpile_with_dir_recursive(program: &Program, source_dir: &str, processed_modules: &mut HashSet<String>) -> Result<String, String> {
+fn transpile_with_dir_recursive(
+    program: &Program,
+    source_dir: &str,
+    processed_modules: &mut HashSet<String>,
+) -> Result<String, String> {
     let mut env = TypeEnv::default();
 
-    let mutating_methods: HashSet<String> = program.stmts.iter()
-        .filter_map(|s| if let Stmt::ClassDef { body, .. } = s { Some(body) } else { None })
+    let mutating_methods: HashSet<String> = program
+        .stmts
+        .iter()
+        .filter_map(|s| {
+            if let Stmt::ClassDef { body, .. } = s {
+                Some(body)
+            } else {
+                None
+            }
+        })
         .flat_map(|body| body.iter())
-        .filter_map(|s| if let Stmt::FuncDef { name, body, .. } = s {
-            let has_self_mut = body.iter().any(|bs| matches!(bs, Stmt::Assign(n, _, _) if n.starts_with("self.")));
-            if has_self_mut { Some(name.clone()) } else { None }
-        } else { None })
+        .filter_map(|s| {
+            if let Stmt::FuncDef { name, body, .. } = s {
+                let has_self_mut = body
+                    .iter()
+                    .any(|bs| matches!(bs, Stmt::Assign(n, _, _) if n.starts_with("self.")));
+                if has_self_mut {
+                    Some(name.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
         .collect();
 
     let mut fn_params_detected: HashMap<String, Vec<(String, Type)>> = HashMap::new();
@@ -1493,11 +2246,21 @@ fn transpile_with_dir_recursive(program: &Program, source_dir: &str, processed_m
 
     // Pre-populate function signatures so inference is order-independent
     for stmt in &program.stmts {
-        if let Stmt::FuncDef { name, params, body, .. } = stmt {
-            let pts: Vec<(String, Type)> = params.iter().map(|(n, _)| {
-                let t = env.vars.get(n).cloned().unwrap_or_else(|| scan_param_type(n, body, &env));
-                (n.clone(), t)
-            }).collect();
+        if let Stmt::FuncDef {
+            name, params, body, ..
+        } = stmt
+        {
+            let pts: Vec<(String, Type)> = params
+                .iter()
+                .map(|(n, _)| {
+                    let t = env
+                        .vars
+                        .get(n)
+                        .cloned()
+                        .unwrap_or_else(|| scan_param_type(n, body, &env));
+                    (n.clone(), t)
+                })
+                .collect();
             fn_params_detected.insert(name.clone(), pts);
             fn_returns_detected.insert(name.clone(), Type::Unknown);
         }
@@ -1516,11 +2279,17 @@ fn transpile_with_dir_recursive(program: &Program, source_dir: &str, processed_m
 
     let mut decorator_fn_types: HashMap<String, Type> = HashMap::new();
     for stmt in &program.stmts {
-        if let Stmt::FuncDef { decorators, name, .. } = stmt {
+        if let Stmt::FuncDef {
+            decorators, name, ..
+        } = stmt
+        {
             for d in decorators {
                 if let Some(params) = fn_params_detected.get(name) {
                     let ret = fn_returns_detected.get(name).cloned().unwrap_or(Type::Unit);
-                    let fn_ptr_type = Type::FnPtr(params.iter().map(|(_, t)| t.clone()).collect(), Box::new(ret));
+                    let fn_ptr_type = Type::FnPtr(
+                        params.iter().map(|(_, t)| t.clone()).collect(),
+                        Box::new(ret),
+                    );
                     decorator_fn_types.insert(d.clone(), fn_ptr_type);
                 }
             }
@@ -1558,7 +2327,10 @@ fn transpile_with_dir_recursive(program: &Program, source_dir: &str, processed_m
 
     for stmt in &program.stmts {
         match stmt {
-            Stmt::FuncDef { .. } | Stmt::ClassDef { .. } | Stmt::Import(_ , _) | Stmt::FromImport(_, _) => {
+            Stmt::FuncDef { .. }
+            | Stmt::ClassDef { .. }
+            | Stmt::Import(_, _)
+            | Stmt::FromImport(_, _) => {
                 stmt_to_rust(stmt, &mut env, &mut ctx, &mut body);
             }
             _ => {
@@ -1597,4 +2369,3 @@ fn transpile_with_dir_recursive(program: &Program, source_dir: &str, processed_m
 
     Ok(output)
 }
-

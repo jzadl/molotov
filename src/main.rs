@@ -1,14 +1,18 @@
+use clap::{Parser as ClapParser, Subcommand};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-use clap::{Parser as ClapParser, Subcommand};
 
-use mltv::tokenizer::tokenize;
 use mltv::parser::Parser;
+use mltv::tokenizer::tokenize;
 use mltv::transpiler::transpile_with_dir;
 
 #[derive(ClapParser)]
-#[command(name = "mltv", version = "0.1.0", about = "Molotov programming language compiler")]
+#[command(
+    name = "mltv",
+    version = "1.1",
+    about = "Molotov programming language compiler"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -51,7 +55,12 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Commands::Deploy { file, output, keep, rust_only }) => {
+        Some(Commands::Deploy {
+            file,
+            output,
+            keep,
+            rust_only,
+        }) => {
             deploy(&file, output.as_deref(), keep, rust_only)?;
         }
         Some(Commands::Run { file, args }) => {
@@ -80,14 +89,17 @@ fn deploy(file: &str, output: Option<&str>, keep: bool, rust_only: bool) -> anyh
     let source = fs::read_to_string(source_path)
         .map_err(|e| anyhow::anyhow!("failed to read '{}': {}", file, e))?;
 
-    let tokens = tokenize(&source)
-        .map_err(|e| anyhow::anyhow!("tokenization error: {}", e))?;
+    let tokens = tokenize(&source).map_err(|e| anyhow::anyhow!("tokenization error: {}", e))?;
 
     let mut parser = Parser::new(tokens);
-    let program = parser.parse_program()
+    let program = parser
+        .parse_program()
         .map_err(|e| anyhow::anyhow!("parse error: {}", e))?;
 
-    let source_dir = source_path.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+    let source_dir = source_path
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
     let rust_code = transpile_with_dir(&program, &source_dir)
         .map_err(|e| anyhow::anyhow!("transpilation error: {}", e))?;
 
@@ -140,21 +152,28 @@ fn run_file(file: &str, args: &[String]) -> anyhow::Result<()> {
     let source = fs::read_to_string(source_path)
         .map_err(|e| anyhow::anyhow!("failed to read '{}': {}", file, e))?;
 
-    let tokens = tokenize(&source)
-        .map_err(|e| anyhow::anyhow!("tokenization error: {}", e))?;
+    let tokens = tokenize(&source).map_err(|e| anyhow::anyhow!("tokenization error: {}", e))?;
 
     let mut parser = Parser::new(tokens);
-    let program = parser.parse_program()
+    let program = parser
+        .parse_program()
         .map_err(|e| anyhow::anyhow!("parse error: {}", e))?;
 
-    let source_dir = source_path.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+    let source_dir = source_path
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
     let rust_code = transpile_with_dir(&program, &source_dir)
         .map_err(|e| anyhow::anyhow!("transpilation error: {}", e))?;
 
     let temp_dir = std::env::temp_dir().join("mltv_run");
     fs::create_dir_all(&temp_dir)?;
 
-    let stem = source_path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+    let stem = source_path
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
     let rs_path = temp_dir.join(format!("{}.rs", stem));
     let binary_path = temp_dir.join(format!("{}.bin", stem));
 
@@ -176,7 +195,8 @@ fn run_file(file: &str, args: &[String]) -> anyhow::Result<()> {
 
     let mut cmd = Command::new(&binary_path);
     cmd.args(args);
-    let exit_status = cmd.status()
+    let exit_status = cmd
+        .status()
         .map_err(|e| anyhow::anyhow!("failed to run binary: {}", e))?;
 
     // Cleanup

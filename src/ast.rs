@@ -47,9 +47,24 @@ impl fmt::Display for Type {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BinOp {
-    Add, Sub, Mul, Div, FloorDiv, Mod, Pow,
-    Eq, Ne, Lt, Gt, Le, Ge,
-    And, Or, In, NotIn, Is,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    FloorDiv,
+    Mod,
+    Pow,
+    Eq,
+    Ne,
+    Lt,
+    Gt,
+    Le,
+    Ge,
+    And,
+    Or,
+    In,
+    NotIn,
+    Is,
 }
 
 #[derive(Debug, Clone)]

@@ -4,9 +4,11 @@ MPM is the official package manager for the Molotov programming language. It all
 
 ## How it works
 
-MPM is a GitHub first package manager. It clones repositories directly from GitHub into a global library folder on your machine. The Molotov compiler (mltv) is configured to search this folder automatically when you use the `import` statement.
+MPM is a GitHub-first package manager. It clones repositories directly from GitHub into a global library folder on your machine. The Molotov compiler (`mltv`) is configured to search this folder automatically when you use the `import` statement.
 
-Libraries are stored in: `~/.molotov/libs/`
+Libraries are stored under: `~/.molotov/libs/<user>/<repo>/`
+
+Each package is namespaced by its GitHub username, so two different users can publish a library with the same name without any conflict. For example, `timmy/cool-library` and `pablo/cool-library` can both be installed and used at the same time.
 
 ## Installation
 
@@ -24,55 +26,107 @@ chmod +x install.sh && ./install.sh
 
 Once installed, the `mpm` command will be available in your terminal.
 
-## Managing Packages
+## Commands
 
-### Installing a package
-To install a library, use the `install` command with the GitHub `user/repo` format:
+### `install`: Install a package
+Downloads a library from GitHub using the `user/repo` format:
 ```bash
-mpm install jzadl/molotov
+mpm install jzadl/my-lib
 ```
-If the package is already installed, MPM will automatically perform a `git pull` to update it to the latest version.
+If the package is already installed, MPM will let you know and suggest using `mpm update` instead.
 
-### Listing installed packages
-To see all the libraries you have downloaded:
+### `update`: Update a package
+Pulls the latest changes from GitHub for an already-installed package:
+```bash
+mpm update jzadl/my-lib
+```
+
+### `remove`: Remove a package
+Deletes a library from your system. Requires the full `user/repo` format:
+```bash
+mpm remove jzadl/my-lib
+```
+
+### `list`: List installed packages
+Shows all installed packages, grouped by user:
 ```bash
 mpm list
 ```
-
-### Removing a package
-To delete a library from your system:
-```bash
-mpm remove molotov
+Example output:
 ```
-Note: You only need to provide the repository name (the part after the slash).
+Installed packages in ~/.molotov/libs:
+  jzadl/my-lib
+  timmy/cool-library
+  pablo/cool-library
+
+  3 package(s) installed.
+```
+
+### `search`: Search installed packages
+Filters your installed packages by name. Matches against both the username and the repo name:
+```bash
+mpm search cool-library
+```
+Example output:
+```
+Searching for 'cool-library':
+  timmy/cool-library
+  pablo/cool-library
+```
+
+### `help`: Show usage
+```bash
+mpm help
+```
 
 ## Creating and Publishing Packages
 
-Creating a Molotov package is simple. Follow these steps:
+Creating a Molotov package is simple:
 
 1. Create a new public repository on GitHub.
 2. Add your `.mltv` files to the repository.
-3. (Optional but recommended) If your package has a main entry point, name it the same as your repository (e.g., `my_lib/my_lib.mltv`).
+3. If your package has a main entry point, name it the same as the repository (e.g., for repo `my-lib`, create `my-lib.mltv`).
 
-Now anyone can install your library using `mpm install your_user/your_repo`.
+Now anyone can install your library with:
+```bash
+mpm install your_username/your_repo
+```
 
 ## Importing Packages
 
-This is the most important part to avoid errors. When you install a package like `jzadl/molotov`, MPM creates a folder named `molotov` in your libraries directory.
+Packages are namespaced by `user/repo`, so imports use the double-colon `::` syntax.
 
 ### Importing the main module
-If the repository contains a file named `molotov.mltv`, you can import it directly:
+If `timmy` has a repo called `hacking-library` containing `hacking-library.mltv`:
 ```python
-import molotov
-molotov.hello()
+import timmy::hacking-library
+timmy::hacking-library.some_function()
 ```
 
-### Importing specific files (Submodules)
-If the repository contains other files, such as `hello.mltv`, you must use the double colon `::` syntax to navigate into the package folder:
+Or with an alias to keep things short:
 ```python
-import molotov::hello
-hello.hello()
+import timmy::hacking-library as hacking-library
+hacking-library.some_function()
+```
+
+### Importing specific submodules
+If the repo contains other files, like `utils.mltv`, navigate into them with `::`:
+```python
+import timmy::hacking-library::utils
+utils.helper()
+```
+
+### Handling name collisions
+Since two users can have repos with the same name, you can install and use both simultaneously by aliasing them:
+```python
+import timmy::hacking-library as timmys_lib
+import pablo::hacking-library as pablos_lib
+
+timmys_lib.some_function()
+pablos_lib.some_function()
 ```
 
 ### Common Pitfalls
-If you try to use `import molotov` but there is no `molotov.mltv` file inside the `molotov` folder, the compiler will fail. Always check the file structure of the library you are using.
+- Always use the full `user/repo` format for `install`, `update`, and `remove`.
+- If `import user::repo` fails, check that the repo contains a file named `repo.mltv` at its root.
+- Submodule files must be referenced explicitly with `::`, they are not imported automatically.

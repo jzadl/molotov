@@ -1,86 +1,194 @@
 #!/usr/bin/env mltv
 
-# mpm - Molotov Package Manager (Prototype)
-
 def get_libs_dir():
-    embed_rust('let home_val = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());')
+    embed_rust('let home_val = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_else(|_| ".".to_string());')
     home = embed_rust('home_val')
     return home + "/.molotov/libs"
 
+# Install
 def install(pkg):
     parts = pkg.split("/")
     if len(parts) != 2:
-        print("Error: Use format 'user/repo'")
+        print("\x1b[31mError: Use format 'user/repo'\x1b[0m")
         return
 
     user = parts[0]
     repo = parts[1]
-    
+
     libs_dir = get_libs_dir()
-    embed_rust('std::fs::create_dir_all(&libs_dir).unwrap();')
-    
-    target_path = libs_dir + "/" + repo
-    
+    user_dir = libs_dir + "/" + user
+    embed_rust("""
+        if let Err(e) = std::fs::create_dir_all(&user_dir) {
+            println!("\\x1b[31mError creating directory: {}\\x1b[0m", e);
+            return;
+        }
+    """)
+
+    target_path = user_dir + "/" + repo
+
     if exists(target_path):
-        print("Package " + repo + " is already installed. Updating...")
-        embed_rust('std::process::Command::new("git").arg("-C").arg(&target_path).arg("pull").status().unwrap();')
+        print("\x1b[33mPackage " + user + "/" + repo + " is already installed. Use 'mpm update " + user + "/" + repo + "' to update it.\x1b[0m")
     else:
-        print("Installing " + user + "/" + repo + "...")
+        print("\x1b[36mInstalling " + user + "/" + repo + "...\x1b[0m")
         url = "https://github.com/" + user + "/" + repo + ".git"
-        embed_rust('std::process::Command::new("git").arg("clone").arg(&url).arg(&target_path).status().unwrap();')
-    
-    print("Successfully installed " + repo + "!")
+        embed_rust("""
+            let status = std::process::Command::new("git").arg("clone").arg(&url).arg(&target_path).status();
+            if status.is_err() || !status.unwrap().success() {
+                println!("\\x1b[31mError: Failed to clone package. Make sure git is installed.\\x1b[0m");
+                return;
+            }
+        """)
+        print("\x1b[32mSuccessfully installed " + user + "/" + repo + "!\x1b[0m")
 
-def remove(repo):
+# Update
+def update(pkg):
+    parts = pkg.split("/")
+    if len(parts) != 2:
+        print("\x1b[31mError: Use format 'user/repo'\x1b[0m")
+        return
+
+    user = parts[0]
+    repo = parts[1]
+
     libs_dir = get_libs_dir()
-    target_path = libs_dir + "/" + repo
-    
-    if exists(target_path):
-        print("Removing package: " + repo)
-        embed_rust('std::fs::remove_dir_all(&target_path).unwrap();')
-        print("Successfully removed " + repo)
-    else:
-        print("Error: Package '" + repo + "' not found")
+    target_path = libs_dir + "/" + user + "/" + repo
 
+    if exists(target_path):
+        print("\x1b[36mUpdating " + user + "/" + repo + "...\x1b[0m")
+        embed_rust("""
+            let status = std::process::Command::new("git").arg("-C").arg(&target_path).arg("pull").status();
+            if status.is_err() || !status.unwrap().success() {
+                println!("\\x1b[31mError: Failed to update package via git.\\x1b[0m");
+                return;
+            }
+        """)
+        print("\x1b[32mSuccessfully updated " + user + "/" + repo + "!\x1b[0m")
+    else:
+        print("\x1b[31mError: Package '" + user + "/" + repo + "' is not installed.\x1b[0m")
+
+# Remove
+def remove(pkg):
+    parts = pkg.split("/")
+    if len(parts) != 2:
+        print("\x1b[31mError: Use format 'user/repo'\x1b[0m")
+        return
+
+    user = parts[0]
+    repo = parts[1]
+
+    libs_dir = get_libs_dir()
+    target_path = libs_dir + "/" + user + "/" + repo
+
+    if exists(target_path):
+        print("\x1b[33mRemoving package: " + user + "/" + repo + "\x1b[0m")
+        embed_rust("""
+            if let Err(e) = std::fs::remove_dir_all(&target_path) {
+                println!("\\x1b[31mError deleting files: {}\\x1b[0m", e);
+                return;
+            }
+        """)
+        print("\x1b[32mSuccessfully removed " + user + "/" + repo + "\x1b[0m")
+    else:
+        print("\x1b[31mError: Package '" + user + "/" + repo + "' not found\x1b[0m")
+
+# List
 def list_pkgs():
     libs_dir = get_libs_dir()
-    print("Installed packages in " + libs_dir + ":")
-    
-    # Usamos Rust para listar directorios
-    embed_rust('if let Ok(entries) = std::fs::read_dir(&libs_dir) {')
-    embed_rust('    for entry in entries {')
-    embed_rust('        if let Ok(entry) = entry {')
-    embed_rust('            if entry.path().is_dir() {')
-    embed_rust('                println!("  - {}", entry.file_name().to_string_lossy());')
-    embed_rust('            }')
-    embed_rust('        }')
-    embed_rust('    }')
-    embed_rust('} else {')
-    embed_rust('    println!("Could not read directory");')
-    embed_rust('}')
+    print("\x1b[36mInstalled packages in \x1b[90m" + libs_dir + "\x1b[36m:\x1b[0m")
+    embed_rust("""
+        let mut count = 0;
+        if let Ok(user_entries) = std::fs::read_dir(&libs_dir) {
+            for user_entry in user_entries.flatten() {
+                if user_entry.path().is_dir() {
+                    let user_name = user_entry.file_name().to_string_lossy().into_owned();
+                    if let Ok(repo_entries) = std::fs::read_dir(user_entry.path()) {
+                        for repo_entry in repo_entries.flatten() {
+                            if repo_entry.path().is_dir() {
+                                let repo_name = repo_entry.file_name().to_string_lossy().into_owned();
+                                println!("  \x1b[90m{}/\x1b[0m\x1b[92m{}\x1b[0m", user_name, repo_name);
+                                count += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if count == 0 {
+            println!("  \x1b[90m(No packages installed yet)\x1b[0m");
+        } else {
+            println!("\n  \x1b[90m{} package(s) installed.\x1b[0m", count);
+        }
+    """)
 
-# CLI Logic
+# Search installed packages by name
+def search(query):
+    libs_dir = get_libs_dir()
+    print("\x1b[36mSearching for '\x1b[93m" + query + "\x1b[36m':\x1b[0m")
+    embed_rust("""
+        let mut count = 0;
+        if let Ok(user_entries) = std::fs::read_dir(&libs_dir) {
+            for user_entry in user_entries.flatten() {
+                if user_entry.path().is_dir() {
+                    let user_name = user_entry.file_name().to_string_lossy().into_owned();
+                    if let Ok(repo_entries) = std::fs::read_dir(user_entry.path()) {
+                        for repo_entry in repo_entries.flatten() {
+                            if repo_entry.path().is_dir() {
+                                let repo_name = repo_entry.file_name().to_string_lossy().into_owned();
+                                if user_name.contains(&*query) || repo_name.contains(&*query) {
+                                    println!("  \x1b[90m{}/\x1b[0m\x1b[92m{}\x1b[0m", user_name, repo_name);
+                                    count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if count == 0 {
+            println!("  \x1b[90mNo matches found.\x1b[0m");
+        }
+    """)
+
+def print_help():
+    print("\x1b[1;35mMolotov Package Manager\x1b[0m")
+    print("\x1b[36mUsage:\x1b[0m")
+    print("  mpm \x1b[32minstall\x1b[0m \x1b[90m<user/repo>\x1b[0m   Install a package")
+    print("  mpm \x1b[33mupdate\x1b[0m  \x1b[90m<user/repo>\x1b[0m   Update an installed package")
+    print("  mpm \x1b[31mremove\x1b[0m  \x1b[90m<user/repo>\x1b[0m   Remove a package")
+    print("  mpm \x1b[34mlist\x1b[0m              List all installed packages")
+    print("  mpm \x1b[35msearch\x1b[0m  \x1b[90m<query>\x1b[0m       Search installed packages")
+    print("  mpm \x1b[90mhelp\x1b[0m              Show this help message")
+
 args_list = args()
 
 if len(args_list) < 2:
-    print("Molotov Package Manager")
-    print("Usage:")
-    print("  mpm install <user/repo>")
-    print("  mpm remove <repo>")
-    print("  mpm list")
+    print_help()
 else:
     command = args_list[1]
     if command == "install":
         if len(args_list) < 3:
-            print("Error: Missing package name")
+            print("\x1b[31mError: Missing package name\x1b[0m")
         else:
             install(args_list[2])
+    elif command == "update":
+        if len(args_list) < 3:
+            print("\x1b[31mError: Missing package name\x1b[0m")
+        else:
+            update(args_list[2])
     elif command == "remove":
         if len(args_list) < 3:
-            print("Error: Missing package name")
+            print("\x1b[31mError: Missing package name\x1b[0m")
         else:
             remove(args_list[2])
     elif command == "list":
         list_pkgs()
+    elif command == "search":
+        if len(args_list) < 3:
+            print("\x1b[31mError: Missing search query\x1b[0m")
+        else:
+            search(args_list[2])
+    elif command == "help":
+        print_help()
     else:
-        print("Unknown command: " + command)
+        print("\x1b[31mUnknown command: " + command + "\x1b[0m")
+        print_help()

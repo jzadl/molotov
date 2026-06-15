@@ -43,11 +43,11 @@ echo "Installed mltv and mpm to $DEST"
 install_extension() {
     local ext_dir="$1"
     mkdir -p "$ext_dir"
-    if [ -d "$ext_dir/molotov-language-0.1.0" ]; then
-        rm -rf "$ext_dir/molotov-language-0.1.0"
+    if [ -d "$ext_dir/molotov-language-1.1" ]; then
+        rm -rf "$ext_dir/molotov-language-1.1"
     fi
-    cp -r "$EXT_DIR" "$ext_dir/molotov-language-0.1.0"
-    echo "Installed VS Code extension to $ext_dir/molotov-language-0.1.0"
+    cp -r "$EXT_DIR" "$ext_dir/molotov-language-1.1"
+    echo "Installed VS Code extension to $ext_dir/molotov-language-1.1"
 }
 
 if [ -d "$HOME/.vscode/extensions" ]; then

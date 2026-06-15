@@ -32,7 +32,7 @@ if ($userPath -notlike "*$UserBin*") {
 # --- Install VS Code extension ---
 $VscodeExt = "$env:USERPROFILE\.vscode\extensions"
 if (Test-Path $VscodeExt) {
-    $Dest = Join-Path $VscodeExt "molotov-language-0.1.0"
+    $Dest = Join-Path $VscodeExt "molotov-language-1.1"
     if (Test-Path $Dest) { Remove-Item -Recurse -Force $Dest }
     Copy-Item -Recurse $ExtDir $Dest
     Write-Host "Installed VS Code extension to $Dest"
@@ -40,7 +40,7 @@ if (Test-Path $VscodeExt) {
 
 $VscodeOssExt = "$env:USERPROFILE\.vscode-oss\extensions"
 if (Test-Path $VscodeOssExt) {
-    $Dest2 = Join-Path $VscodeOssExt "molotov-language-0.1.0"
+    $Dest2 = Join-Path $VscodeOssExt "molotov-language-1.1"
     if (Test-Path $Dest2) { Remove-Item -Recurse -Force $Dest2 }
     Copy-Item -Recurse $ExtDir $Dest2
     Write-Host "Installed VS Code extension to $Dest2"

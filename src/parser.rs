@@ -9,7 +9,11 @@ pub struct Parser {
 
 impl Parser {
     pub fn new(tokens: Vec<TokenWithMeta>) -> Self {
-        Parser { tokens, pos: 0, context: Vec::new() }
+        Parser {
+            tokens,
+            pos: 0,
+            context: Vec::new(),
+        }
     }
 
     fn with_context<F, T>(&mut self, desc: &str, f: F) -> Result<T, String>
@@ -48,8 +52,14 @@ impl Parser {
         let ctx = self.ctx_str();
         match self.advance() {
             Some(tm) if &tm.token == expected => Ok(()),
-            Some(tm) => Err(format!("line {}: expected {:?}, got {:?}{}", tm.line, expected, tm.token, ctx)),
-            None => Err(format!("unexpected end of input, expected {:?}{}", expected, ctx)),
+            Some(tm) => Err(format!(
+                "line {}: expected {:?}, got {:?}{}",
+                tm.line, expected, tm.token, ctx
+            )),
+            None => Err(format!(
+                "unexpected end of input, expected {:?}{}",
+                expected, ctx
+            )),
         }
     }
 
@@ -58,9 +68,15 @@ impl Parser {
         match self.advance() {
             Some(tm) => match &tm.token {
                 Token::Ident(s) => Ok(s.clone()),
-                other => Err(format!("line {}: expected identifier, got {:?}{}", tm.line, other, ctx)),
+                other => Err(format!(
+                    "line {}: expected identifier, got {:?}{}",
+                    tm.line, other, ctx
+                )),
             },
-            None => Err(format!("unexpected end of input, expected identifier{}", ctx)),
+            None => Err(format!(
+                "unexpected end of input, expected identifier{}",
+                ctx
+            )),
         }
     }
 
@@ -107,15 +123,28 @@ impl Parser {
         };
 
         let stmt = match &peek.token {
-            Token::KwDef => self.with_context("function definition", |s| s.parse_func_def(decorators)),
-            Token::KwClass => self.with_context("class definition", |s| s.parse_class_def(decorators)),
+            Token::KwDef => {
+                self.with_context("function definition", |s| s.parse_func_def(decorators))
+            }
+            Token::KwClass => {
+                self.with_context("class definition", |s| s.parse_class_def(decorators))
+            }
             Token::KwIf => self.with_context("if statement", |s| s.parse_if()),
             Token::KwWhile => self.with_context("while loop", |s| s.parse_while()),
             Token::KwFor => self.with_context("for loop", |s| s.parse_for()),
             Token::KwReturn => self.with_context("return statement", |s| s.parse_return()),
-            Token::KwBreak => { self.advance(); Ok(Stmt::Break) }
-            Token::KwContinue => { self.advance(); Ok(Stmt::Continue) }
-            Token::KwPass => { self.advance(); Ok(Stmt::Pass) }
+            Token::KwBreak => {
+                self.advance();
+                Ok(Stmt::Break)
+            }
+            Token::KwContinue => {
+                self.advance();
+                Ok(Stmt::Continue)
+            }
+            Token::KwPass => {
+                self.advance();
+                Ok(Stmt::Pass)
+            }
             Token::KwImport => self.with_context("import", |s| s.parse_import()),
             Token::KwFrom => self.with_context("from import", |s| s.parse_from_import()),
             Token::KwDel => self.with_context("del statement", |s| s.parse_del()),
@@ -124,7 +153,10 @@ impl Parser {
             Token::KwWith => self.with_context("with statement", |s| s.parse_with()),
             _ => {
                 if !decorators.is_empty() {
-                    return Err(format!("decorator without function or class{}", self.ctx_str()));
+                    return Err(format!(
+                        "decorator without function or class{}",
+                        self.ctx_str()
+                    ));
                 }
                 self.with_context("expression statement", |s| s.parse_simple_stmt())
             }
@@ -175,7 +207,10 @@ impl Parser {
             let mut elems = vec![expr];
             while self.check(&Token::Comma) {
                 self.advance();
-                if self.check(&Token::Newline) || self.check(&Token::Dedent) || self.peek().is_none() {
+                if self.check(&Token::Newline)
+                    || self.check(&Token::Dedent)
+                    || self.peek().is_none()
+                {
                     break;
                 }
                 elems.push(self.parse_expr()?);
@@ -193,11 +228,15 @@ impl Parser {
 
             match expr {
                 Expr::Ident(name) => {
-                    if self.check(&Token::Newline) { self.advance(); }
+                    if self.check(&Token::Newline) {
+                        self.advance();
+                    }
                     Ok(Stmt::Assign(name, value, true))
                 }
                 Expr::Attribute(obj, attr) => {
-                    if self.check(&Token::Newline) { self.advance(); }
+                    if self.check(&Token::Newline) {
+                        self.advance();
+                    }
                     if let Expr::Ident(self_name) = *obj {
                         if self_name == "self" {
                             Ok(Stmt::Assign(format!("self.{}", attr), value, true))
@@ -209,27 +248,54 @@ impl Parser {
                     }
                 }
                 Expr::Subscript(target, index) => {
-                    if self.check(&Token::Newline) { self.advance(); }
+                    if self.check(&Token::Newline) {
+                        self.advance();
+                    }
                     match *target {
-                        Expr::Ident(name) => {
-                            Ok(Stmt::Assign(format!("__setitem__({})", name),
-                                Expr::FuncCall("__setitem_value__".to_string(), vec![*index, value]), true))
-                        }
+                        Expr::Ident(name) => Ok(Stmt::Assign(
+                            format!("__setitem__({})", name),
+                            Expr::FuncCall("__setitem_value__".to_string(), vec![*index, value]),
+                            true,
+                        )),
                         _ => Err("subscript target must be an identifier".to_string()),
                     }
                 }
                 _ => {
-                    if self.check(&Token::Newline) { self.advance(); }
+                    if self.check(&Token::Newline) {
+                        self.advance();
+                    }
                     Err("assignment target must be an identifier".to_string())
                 }
             }
-        } else if self.check(&Token::PlusEq) { self.advance(); let v = self.parse_expr()?; self.skip_newlines(); Ok(Stmt::AugAssign(self.extract_name(&expr)?, BinOp::Add, v)) }
-        else if self.check(&Token::MinusEq) { self.advance(); let v = self.parse_expr()?; self.skip_newlines(); Ok(Stmt::AugAssign(self.extract_name(&expr)?, BinOp::Sub, v)) }
-        else if self.check(&Token::StarEq) { self.advance(); let v = self.parse_expr()?; self.skip_newlines(); Ok(Stmt::AugAssign(self.extract_name(&expr)?, BinOp::Mul, v)) }
-        else if self.check(&Token::SlashEq) { self.advance(); let v = self.parse_expr()?; self.skip_newlines(); Ok(Stmt::AugAssign(self.extract_name(&expr)?, BinOp::Div, v)) }
-        else if self.check(&Token::PercentEq) { self.advance(); let v = self.parse_expr()?; self.skip_newlines(); Ok(Stmt::AugAssign(self.extract_name(&expr)?, BinOp::Mod, v)) }
-        else {
-            if self.check(&Token::Newline) { self.advance(); }
+        } else if self.check(&Token::PlusEq) {
+            self.advance();
+            let v = self.parse_expr()?;
+            self.skip_newlines();
+            Ok(Stmt::AugAssign(self.extract_name(&expr)?, BinOp::Add, v))
+        } else if self.check(&Token::MinusEq) {
+            self.advance();
+            let v = self.parse_expr()?;
+            self.skip_newlines();
+            Ok(Stmt::AugAssign(self.extract_name(&expr)?, BinOp::Sub, v))
+        } else if self.check(&Token::StarEq) {
+            self.advance();
+            let v = self.parse_expr()?;
+            self.skip_newlines();
+            Ok(Stmt::AugAssign(self.extract_name(&expr)?, BinOp::Mul, v))
+        } else if self.check(&Token::SlashEq) {
+            self.advance();
+            let v = self.parse_expr()?;
+            self.skip_newlines();
+            Ok(Stmt::AugAssign(self.extract_name(&expr)?, BinOp::Div, v))
+        } else if self.check(&Token::PercentEq) {
+            self.advance();
+            let v = self.parse_expr()?;
+            self.skip_newlines();
+            Ok(Stmt::AugAssign(self.extract_name(&expr)?, BinOp::Mod, v))
+        } else {
+            if self.check(&Token::Newline) {
+                self.advance();
+            }
             Ok(Stmt::Expr(expr))
         }
     }
@@ -246,7 +312,10 @@ impl Parser {
             let mut vals = vec![first];
             while self.check(&Token::Comma) {
                 self.advance();
-                if self.check(&Token::Newline) || self.check(&Token::Dedent) || self.peek().is_none() {
+                if self.check(&Token::Newline)
+                    || self.check(&Token::Dedent)
+                    || self.peek().is_none()
+                {
                     break;
                 }
                 vals.push(self.parse_expr()?);
@@ -255,8 +324,16 @@ impl Parser {
         } else {
             first
         };
-        if self.check(&Token::Newline) { self.advance(); }
-        let names = elems.into_iter().map(|e| match e { Expr::Ident(n) => n, _ => unreachable!() }).collect();
+        if self.check(&Token::Newline) {
+            self.advance();
+        }
+        let names = elems
+            .into_iter()
+            .map(|e| match e {
+                Expr::Ident(n) => n,
+                _ => unreachable!(),
+            })
+            .collect();
         Ok(Stmt::AssignTuple(names, value))
     }
 
@@ -295,7 +372,13 @@ impl Parser {
         let body = self.parse_block()?;
         let return_type = None;
 
-        Ok(Stmt::FuncDef { name, params, body, return_type, decorators })
+        Ok(Stmt::FuncDef {
+            name,
+            params,
+            body,
+            return_type,
+            decorators,
+        })
     }
 
     fn parse_class_def(&mut self, decorators: Vec<String>) -> Result<Stmt, String> {
@@ -320,7 +403,12 @@ impl Parser {
         self.expect(&Token::Colon)?;
         let body = self.parse_block()?;
 
-        Ok(Stmt::ClassDef { name, bases, body, decorators })
+        Ok(Stmt::ClassDef {
+            name,
+            bases,
+            body,
+            decorators,
+        })
     }
 
     fn parse_if(&mut self) -> Result<Stmt, String> {
@@ -381,7 +469,9 @@ impl Parser {
             Ok(Stmt::Return(None))
         } else {
             let expr = self.parse_expr()?;
-            if self.check(&Token::Newline) { self.advance(); }
+            if self.check(&Token::Newline) {
+                self.advance();
+            }
             Ok(Stmt::Return(Some(expr)))
         }
     }
@@ -420,9 +510,13 @@ impl Parser {
                 self.advance();
                 if self.check(&Token::Colon) {
                     self.advance();
-                    if self.check(&Token::KwImport) { break; }
+                    if self.check(&Token::KwImport) {
+                        break;
+                    }
                     path.push_str(&format!("::{}", self.expect_ident()?));
-                } else { break; }
+                } else {
+                    break;
+                }
             }
             path
         };
@@ -469,7 +563,10 @@ impl Parser {
 
         while self.check(&Token::KwExcept) {
             self.advance();
-            let exception = if matches!(self.peek().map(|t| &t.token), Some(Token::Ident(_)) | Some(Token::LParen)) {
+            let exception = if matches!(
+                self.peek().map(|t| &t.token),
+                Some(Token::Ident(_)) | Some(Token::LParen)
+            ) {
                 self.parse_expr().map(|e| format!("{:?}", e))?
             } else {
                 "Exception".to_string()
@@ -482,7 +579,11 @@ impl Parser {
             };
             self.expect(&Token::Colon)?;
             let handler_body = self.parse_block()?;
-            handlers.push(Handler { exception, var, body: handler_body });
+            handlers.push(Handler {
+                exception,
+                var,
+                body: handler_body,
+            });
             self.skip_newlines();
         }
 
@@ -499,7 +600,12 @@ impl Parser {
             finally_body = Some(self.parse_block()?);
         }
 
-        Ok(Stmt::Try { body, handlers, else_body, finally_body })
+        Ok(Stmt::Try {
+            body,
+            handlers,
+            else_body,
+            finally_body,
+        })
     }
 
     fn parse_raise(&mut self) -> Result<Stmt, String> {
@@ -563,23 +669,36 @@ impl Parser {
         let mut left = self.parse_term_expr()?;
 
         loop {
-            let op = if self.check(&Token::EqEq) { Some(BinOp::Eq) }
-            else if self.check(&Token::BangEq) { Some(BinOp::Ne) }
-            else if self.check(&Token::Less) { Some(BinOp::Lt) }
-            else if self.check(&Token::Greater) { Some(BinOp::Gt) }
-            else if self.check(&Token::LessEq) { Some(BinOp::Le) }
-            else if self.check(&Token::GreaterEq) { Some(BinOp::Ge) }
-            else if self.check(&Token::KwIn) { Some(BinOp::In) }
-            else if self.check(&Token::KwIs) { Some(BinOp::Is) }
-            else if self.check(&Token::KwNot) && self.peek_at(1).map_or(false, |t| t.token == Token::KwIn) {
+            let op = if self.check(&Token::EqEq) {
+                Some(BinOp::Eq)
+            } else if self.check(&Token::BangEq) {
+                Some(BinOp::Ne)
+            } else if self.check(&Token::Less) {
+                Some(BinOp::Lt)
+            } else if self.check(&Token::Greater) {
+                Some(BinOp::Gt)
+            } else if self.check(&Token::LessEq) {
+                Some(BinOp::Le)
+            } else if self.check(&Token::GreaterEq) {
+                Some(BinOp::Ge)
+            } else if self.check(&Token::KwIn) {
+                Some(BinOp::In)
+            } else if self.check(&Token::KwIs) {
+                Some(BinOp::Is)
+            } else if self.check(&Token::KwNot)
+                && self.peek_at(1).map_or(false, |t| t.token == Token::KwIn)
+            {
                 Some(BinOp::NotIn)
-            }
-            else { None };
+            } else {
+                None
+            };
 
             match op {
                 Some(op) => {
                     self.advance();
-                    if op == BinOp::NotIn { self.advance(); } // consume the 'in' too
+                    if op == BinOp::NotIn {
+                        self.advance();
+                    } // consume the 'in' too
                     let right = self.parse_term_expr()?;
                     left = Expr::BinOp(Box::new(left), op, Box::new(right));
                 }
@@ -592,9 +711,13 @@ impl Parser {
     fn parse_term_expr(&mut self) -> Result<Expr, String> {
         let mut left = self.parse_arith_expr()?;
         loop {
-            let op = if self.check(&Token::Plus) { Some(BinOp::Add) }
-            else if self.check(&Token::Minus) { Some(BinOp::Sub) }
-            else { None };
+            let op = if self.check(&Token::Plus) {
+                Some(BinOp::Add)
+            } else if self.check(&Token::Minus) {
+                Some(BinOp::Sub)
+            } else {
+                None
+            };
 
             match op {
                 Some(op) => {
@@ -611,11 +734,17 @@ impl Parser {
     fn parse_arith_expr(&mut self) -> Result<Expr, String> {
         let mut left = self.parse_unary_expr()?;
         loop {
-            let op = if self.check(&Token::Star) { Some(BinOp::Mul) }
-            else if self.check(&Token::Slash) { Some(BinOp::Div) }
-            else if self.check(&Token::DoubleSlash) { Some(BinOp::FloorDiv) }
-            else if self.check(&Token::Percent) { Some(BinOp::Mod) }
-            else { None };
+            let op = if self.check(&Token::Star) {
+                Some(BinOp::Mul)
+            } else if self.check(&Token::Slash) {
+                Some(BinOp::Div)
+            } else if self.check(&Token::DoubleSlash) {
+                Some(BinOp::FloorDiv)
+            } else if self.check(&Token::Percent) {
+                Some(BinOp::Mod)
+            } else {
+                None
+            };
 
             match op {
                 Some(op) => {
@@ -676,7 +805,10 @@ impl Parser {
                         left = Expr::FuncCall(name, args);
                     }
                     Expr::Attribute(_, _) => {
-                        left = Expr::FuncCall("__method_call__".to_string(), vec![left, Expr::List(args)]);
+                        left = Expr::FuncCall(
+                            "__method_call__".to_string(),
+                            vec![left, Expr::List(args)],
+                        );
                     }
                     _ => {
                         left = Expr::FuncCall("__call__".to_string(), vec![left, Expr::List(args)]);
@@ -701,13 +833,25 @@ impl Parser {
 
                 if self.check(&Token::Colon) {
                     self.advance();
-                    let end = if self.check(&Token::RBracket) { None } else {
-                        if self.check(&Token::Colon) { None } else { Some(Box::new(self.parse_expr()?)) }
+                    let end = if self.check(&Token::RBracket) {
+                        None
+                    } else {
+                        if self.check(&Token::Colon) {
+                            None
+                        } else {
+                            Some(Box::new(self.parse_expr()?))
+                        }
                     };
                     let step = if self.check(&Token::Colon) {
                         self.advance();
-                        if self.check(&Token::RBracket) { None } else { Some(Box::new(self.parse_expr()?)) }
-                    } else { None };
+                        if self.check(&Token::RBracket) {
+                            None
+                        } else {
+                            Some(Box::new(self.parse_expr()?))
+                        }
+                    } else {
+                        None
+                    };
                     self.expect(&Token::RBracket)?;
 
                     let start = Some(Box::new(first));
@@ -761,7 +905,11 @@ impl Parser {
         Ok(left)
     }
 
-    fn parse_comp(&mut self, kind: ComprehensionKind, first: Expr) -> Result<Comprehension, String> {
+    fn parse_comp(
+        &mut self,
+        kind: ComprehensionKind,
+        first: Expr,
+    ) -> Result<Comprehension, String> {
         let mut generators = Vec::new();
 
         loop {
@@ -775,7 +923,11 @@ impl Parser {
             } else {
                 None
             };
-            generators.push(CompGenerator { var, iter: Box::new(iter), cond });
+            generators.push(CompGenerator {
+                var,
+                iter: Box::new(iter),
+                cond,
+            });
 
             if !self.check(&Token::KwFor) {
                 break;
@@ -827,11 +979,15 @@ impl Parser {
 
         match tm.token {
             Token::IntLit(s) => {
-                let val: i64 = s.parse().map_err(|e| format!("invalid integer '{}': {}", s, e))?;
+                let val: i64 = s
+                    .parse()
+                    .map_err(|e| format!("invalid integer '{}': {}", s, e))?;
                 Ok(Expr::IntLit(val))
             }
             Token::FloatLit(s) => {
-                let val: f64 = s.parse().map_err(|e| format!("invalid float '{}': {}", s, e))?;
+                let val: f64 = s
+                    .parse()
+                    .map_err(|e| format!("invalid float '{}': {}", s, e))?;
                 Ok(Expr::FloatLit(val))
             }
             Token::StrLit(s) => Ok(Expr::StrLit(s)),
@@ -945,7 +1101,10 @@ impl Parser {
             }
             _ => {
                 let ctx = self.ctx_str();
-                Err(format!("line {}: unexpected token {:?} in expression{}", tm.line, tm.token, ctx))
+                Err(format!(
+                    "line {}: unexpected token {:?} in expression{}",
+                    tm.line, tm.token, ctx
+                ))
             }
         }
     }
@@ -1003,7 +1162,6 @@ fn parse_fstring_expr(s: &str) -> Expr {
         Expr::Ident(s.to_string())
     }
 }
-
 
 // why am i even doing this
 // nobody is ever going to read or use this
