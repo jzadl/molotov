@@ -297,7 +297,7 @@ cinclude("helper.rs")
 | `zip(a, b)` | Zip two lists |
 | `args()` | Get command-line arguments |
 | `embed_rust(code)` | Inline Rust code |
-| `cinclude(path)` | Include Rust file |
+| `cinclude(path)` | Include Rust file in compilation |
 
 ## VSCode extension
 
