@@ -2,7 +2,6 @@
 
 Molotov is a programming language with Python-like syntax that compiles to native binaries via Rust. Write in Python-style syntax, get Rust performance.
 
-
 ```python
 def fib(n):
     if n <= 1:
@@ -60,6 +59,7 @@ mltv deploy <file>          Transpile .mltv and compile to binary
   --keep                    Keep the generated .rs file
 
 mltv run <file>             Transpile, compile, and run in one step
+```
 
 ### Package Manager (mpm)
 
@@ -316,4 +316,4 @@ code --install-extension vscode-molotov/
 3. **Transpiler** generates Rust code with type inference
 4. **rustc** compiles the Rust code to a native binary
 
-   my first rust program, learned after like 1 year or something like that
+my first rust program, learned after like 1 year or something like that
