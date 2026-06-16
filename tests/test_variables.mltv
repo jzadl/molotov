@@ -1,0 +1,8 @@
+x = 42
+print(x)
+x = 99
+print(x)
+s = "hello"
+print(s)
+b = True
+print(b)

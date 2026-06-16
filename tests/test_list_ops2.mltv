@@ -1,0 +1,6 @@
+a = [1, 2, 3, 4, 5]
+a.insert(1, 9)
+print(a[1])
+a.remove(2)
+print(a[0])
+print(len(a))

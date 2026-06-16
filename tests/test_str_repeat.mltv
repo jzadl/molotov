@@ -1,0 +1,12 @@
+s = ""
+i = 0
+while i < 3:
+    s = s + "hi"
+    i = i + 1
+print(s)
+t = ""
+j = 0
+while j < 5:
+    t = t + "-"
+    j = j + 1
+print(t)

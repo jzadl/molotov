@@ -1,0 +1,9 @@
+def side():
+    print("called")
+    return True
+if True or side():
+    print("or_skipped")
+if False and side():
+    print("and_skipped")
+else:
+    print("and_not_called")

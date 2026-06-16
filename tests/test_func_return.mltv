@@ -1,0 +1,9 @@
+def make_list():
+    return [1, 2, 3]
+def make_dict():
+    return {"a": 1}
+def identity(x):
+    return x
+print(len(make_list()))
+print(len(make_dict()))
+print(identity(42))

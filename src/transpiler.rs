@@ -130,16 +130,30 @@ impl TypeEnv {
                         || rt == Type::Unknown
                     {
                         Type::Str
+                    } else if lt == Type::F64 || rt == Type::F64 {
+                        Type::F64
                     } else {
                         Type::I64
                     }
                 }
-                BinOp::FloorDiv | BinOp::Mod | BinOp::Sub | BinOp::Mul | BinOp::Div => Type::I64,
+                BinOp::Sub | BinOp::Mul | BinOp::Div => {
+                    let lt = self.infer_expr_type(left);
+                    let rt = self.infer_expr_type(right);
+                    if lt == Type::F64 || rt == Type::F64 { Type::F64 } else { Type::I64 }
+                }
+                BinOp::FloorDiv | BinOp::Mod => {
+                    let lt = self.infer_expr_type(left);
+                    let rt = self.infer_expr_type(right);
+                    if lt == Type::F64 || rt == Type::F64 { Type::F64 } else { Type::I64 }
+                }
                 BinOp::Pow => Type::F64,
                 BinOp::And | BinOp::Or => Type::Bool,
             },
-            Expr::UnaryOp(op, _) => match op {
-                UnaryOp::Neg => Type::I64,
+            Expr::UnaryOp(op, expr) => match op {
+                UnaryOp::Neg => {
+                    let t = self.infer_expr_type(expr);
+                    if t == Type::F64 { Type::F64 } else { Type::I64 }
+                }
                 UnaryOp::Not => Type::Bool,
             },
             Expr::FuncCall(name, _) => match name.as_str() {
@@ -206,7 +220,18 @@ impl TypeEnv {
                 "copy" => Type::Unknown,
                 _ => Type::Unknown,
             },
-            Expr::Attribute(_, _) => Type::Unknown,
+            Expr::Attribute(obj, attr) => {
+                if let Expr::Ident(name) = obj.as_ref() {
+                    if name == "self" {
+                        return self
+                            .vars
+                            .get(&format!("self.{}", attr))
+                            .cloned()
+                            .unwrap_or(Type::Unknown);
+                    }
+                }
+                Type::Unknown
+            }
             Expr::Subscript(obj, index) => {
                 let ot = self.infer_expr_type(obj);
                 if matches!(index.as_ref(), Expr::Slice(_, _, _)) {
@@ -443,15 +468,45 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
                             format!("&{}", r)
                         };
                         format!("{} + {}", l_use, r_use)
+                    } else if lt == Type::F64 || rt == Type::F64 {
+                        format!("({} as f64) + ({} as f64)", l, r)
                     } else {
                         format!("{} + {}", l, r)
                     }
                 }
-                BinOp::Sub => format!("{} - {}", l, r),
-                BinOp::Mul => format!("{} * {}", l, r),
+                BinOp::Sub => {
+                    let lt = env.infer_expr_type(left);
+                    let rt = env.infer_expr_type(right);
+                    if lt == Type::F64 || rt == Type::F64 {
+                        format!("({} as f64) - ({} as f64)", l, r)
+                    } else {
+                        format!("{} - {}", l, r)
+                    }
+                }
+                BinOp::Mul => {
+                    let lt = env.infer_expr_type(left);
+                    let rt = env.infer_expr_type(right);
+                    if lt == Type::Str && rt == Type::I64 {
+                        format!("({}).repeat({} as usize)", l, r)
+                    } else if lt == Type::I64 && rt == Type::Str {
+                        format!("({}).repeat({} as usize)", r, l)
+                    } else if lt == Type::F64 || rt == Type::F64 {
+                        format!("({} as f64) * ({} as f64)", l, r)
+                    } else {
+                        format!("{} * {}", l, r)
+                    }
+                }
                 BinOp::Div => format!("{} as f64 / {} as f64", l, r),
-                BinOp::FloorDiv => format!("{} / {}", l, r),
-                BinOp::Mod => format!("{} % {}", l, r),
+                BinOp::FloorDiv => format!("(({} as f64 / {} as f64).floor()) as i64", l, r),
+                BinOp::Mod => {
+                    let lt = env.infer_expr_type(left);
+                    let rt = env.infer_expr_type(right);
+                    if lt == Type::F64 || rt == Type::F64 {
+                        format!("({} as f64) % ({} as f64)", l, r)
+                    } else {
+                        format!("{} % {}", l, r)
+                    }
+                }
                 BinOp::Pow => format!("({} as i64).pow({} as u32)", l, r),
                 BinOp::Eq => format!("{} == {}", l, r),
                 BinOp::Ne => format!("{} != {}", l, r),
@@ -461,9 +516,23 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
                 BinOp::Ge => format!("{} >= {}", l, r),
                 BinOp::And => format!("{} && {}", l, r),
                 BinOp::Or => format!("{} || {}", l, r),
-                BinOp::In => format!("{}.contains(&{})", r, l),
-                BinOp::NotIn => format!("!{}.contains(&{})", r, l),
-                BinOp::Is => format!("std::ptr::eq(&{}, &{})", l, r),
+                BinOp::In => {
+                    let rt = env.infer_expr_type(right);
+                    if matches!(rt, Type::Dict(_, _)) {
+                        format!("{}.contains_key(&{})", r, l)
+                    } else {
+                        format!("{}.contains(&{})", r, l)
+                    }
+                }
+                BinOp::NotIn => {
+                    let rt = env.infer_expr_type(right);
+                    if matches!(rt, Type::Dict(_, _)) {
+                        format!("!{}.contains_key(&{})", r, l)
+                    } else {
+                        format!("!{}.contains(&{})", r, l)
+                    }
+                }
+                BinOp::Is => format!("{} == {}", l, r),
             }
         }
         Expr::UnaryOp(op, expr) => {
@@ -507,9 +576,15 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
                 "print" | "println" => {
                     let joined = args_rust.join(", ");
                     let first_type = args.first().map(|a| env.infer_expr_type(a));
+                    let is_bool = matches!(first_type, Some(Type::Bool));
                     let is_compound = matches!(first_type, Some(Type::Dict(_, _) | Type::List(_) | Type::None));
-                    if is_compound { format!("println!(\"{{:?}}\", {})", joined) }
-                    else { format!("println!(\"{{}}\", {})", joined) }
+                    if is_bool {
+                        format!("println!(\"{{}}\", if {} {{ \"True\" }} else {{ \"False\" }})", joined)
+                    } else if is_compound {
+                        format!("println!(\"{{:?}}\", {})", joined)
+                    } else {
+                        format!("println!(\"{{}}\", {})", joined)
+                    }
                 }
                 "args" => "std::env::args().collect::<Vec<String>>()".to_string(),
                 "len" => format!("{}.len()", args_rust.join(", ")),
@@ -647,10 +722,18 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
             } else {
                 "."
             };
+            let obj_type = env.infer_expr_type(obj);
             match method.as_str() {
                 "append" => format!("{}.push({})", obj_s, args_s.join(", ")),
                 "pop" => format!("{}.pop()", obj_s),
-                "remove" => format!("{}.retain(|x| x != {})", obj_s, args_s.join(", ")),
+                "remove" => {
+                    let val = args_s.join(", ");
+                    if matches!(obj_type, Type::Str) {
+                        format!("{} = {}.replacen(&{}, \"\", 1)", obj_s, obj_s, val)
+                    } else {
+                        format!("{}.retain(|x| *x != {})", obj_s, val)
+                    }
+                }
                 "insert" => format!("{}.insert({})", obj_s, args_s.join(", ")),
                 "sort" => format!("{}.sort()", obj_s),
                 "reverse" => format!("{}.reverse()", obj_s),
@@ -732,21 +815,38 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
                     obj_s, obj_s
                 ),
                 "find" | "index" => {
-                    format!("{}.find(&{}).map_or(-1i64, |i| i as i64)", obj_s, args_s[0])
-                }
-                "rfind" | "rindex" => format!(
-                    "{}.rfind(&{}).map_or(-1i64, |i| i as i64)",
-                    obj_s, args_s[0]
-                ),
-                "count" => format!("{}.matches(&{}).count() as i64", obj_s, args_s[0]),
-                "get" => {
-                    if args_s.len() >= 2 {
-                        format!(
-                            "{}.get(&{}).cloned().unwrap_or_else(|| {})",
-                            obj_s, args_s[0], args_s[1]
-                        )
+                    if matches!(obj_type, Type::List(_)) {
+                        format!("{}.iter().position(|x| *x == {}).map_or(-1i64, |i| i as i64)", obj_s, args_s[0])
                     } else {
-                        format!("{}.get(&{}).cloned()", obj_s, args_s[0])
+                        format!("{}.find(&{}).map_or(-1i64, |i| i as i64)", obj_s, args_s[0])
+                    }
+                }
+                "rfind" | "rindex" => {
+                    if matches!(obj_type, Type::List(_)) {
+                        format!("{}.iter().rposition(|x| *x == {}).map_or(-1i64, |i| i as i64)", obj_s, args_s[0])
+                    } else {
+                        format!("{}.rfind(&{}).map_or(-1i64, |i| i as i64)", obj_s, args_s[0])
+                    }
+                }
+                "count" => {
+                    if matches!(obj_type, Type::List(_)) {
+                        format!("{}.iter().filter(|&x| *x == {}).count() as i64", obj_s, args_s[0])
+                    } else {
+                        format!("{}.matches(&{}).count() as i64", obj_s, args_s[0])
+                    }
+                }
+                "get" => {
+                    if matches!(obj_type, Type::Dict(_, _)) {
+                        if args_s.len() >= 2 {
+                            format!(
+                                "{}.get(&{}).cloned().unwrap_or_else(|| {})",
+                                obj_s, args_s[0], args_s[1]
+                            )
+                        } else {
+                            format!("{}.get(&{}).cloned()", obj_s, args_s[0])
+                        }
+                    } else {
+                        format!("{}{}{}({})", obj_s, sep, method, args_s.join(", "))
                     }
                 }
                 "keys" => format!("{}.keys().cloned().collect::<Vec<_>>()", obj_s),
@@ -810,6 +910,12 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
             } else if matches!(obj_type, Type::Dict(_, _)) {
                 let raw = expr_to_rust(index, env, ctx);
                 format!("{}[&{}]", obj_s, raw)
+            } else if matches!(obj_type, Type::Str) && idx_type == Type::I64 {
+                let raw = expr_to_rust(index, env, ctx);
+                format!(
+                    "{{ let __v = &{}; let __i = {} as i64; if __i < 0 {{ __v.chars().nth(__v.chars().count() - ((-__i) as usize)).unwrap_or(' ') }} else {{ __v.chars().nth(__i as usize).unwrap_or(' ') }} }}",
+                    obj_s, raw
+                )
             } else if idx_type == Type::I64 {
                 let raw = expr_to_rust(index, env, ctx);
                 format!(
@@ -1203,7 +1309,7 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
                                 .replace('\r', "\\r");
                             format!("\"{}\"", escaped)
                         } else {
-                            format!("&{}", expr_to_rust(&args[0], env, ctx))
+                            format!("{} as usize", expr_to_rust(&args[0], env, ctx))
                         };
                         let val_expr = expr_to_rust(&args[1], env, ctx);
                         if is_dict {
@@ -1608,9 +1714,7 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
                                     .get(&p.0)
                                     .cloned()
                                     .unwrap_or_else(|| scan_param_type(&p.0, mbody, env));
-                                if field_names.insert(p.0.clone()) {
-                                    fields.push((p.0.clone(), ft));
-                                }
+                                env.vars.insert(p.0.clone(), ft);
                             }
                         }
                         for s in mbody {
@@ -1623,13 +1727,17 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
                                     }
                                 }
                             }
-                        }
-                    }
-                    methods.push(stmt.clone());
                 }
             }
+            methods.push(stmt.clone());
+        }
+    }
 
-            for d in decorators.iter().rev() {
+    for (f, ft) in &fields {
+        env.vars.insert(format!("self.{}", f), ft.clone());
+    }
+
+    for d in decorators.iter().rev() {
                 out.push_str(&format!(
                     "{}let {} = {}({});\n",
                     indent(ctx.depth),
@@ -1791,7 +1899,7 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
         Stmt::Pass => {}
         Stmt::Import(module, alias) => {
             let mut is_molotov = false;
-            let internal_mod_name = module.replace("::", "_");
+            let internal_mod_name = module.replace("::", "_").replace("-", "_");
             if !ctx.processed_modules.contains(module) {
                 if let Some(path) = resolve_module(module, &ctx.source_dir) {
                     ctx.processed_modules.insert(module.clone());
@@ -1820,15 +1928,16 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
 
             if is_molotov {
                 if let Some(a) = alias {
-                    ctx.module_names.insert(a.clone());
+                    let alias_safe = a.replace("-", "_");
+                    ctx.module_names.insert(alias_safe.clone());
                     out.push_str(&format!(
                         "{}use {} as {};\n",
                         indent(ctx.depth),
                         internal_mod_name,
-                        a
+                        alias_safe
                     ));
                 } else {
-                    let mod_name = module.split("::").last().unwrap();
+                    let mod_name = module.split("::").last().unwrap().replace("-", "_");
                     ctx.module_names.insert(mod_name.to_string());
                     out.push_str(&format!(
                         "{}use {} as {};\n",
@@ -1852,7 +1961,7 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
         }
         Stmt::FromImport(module, names) => {
             let mut is_molotov = false;
-            let internal_mod_name = module.replace("::", "_");
+            let internal_mod_name = module.replace("::", "_").replace("-", "_");
             if !ctx.processed_modules.contains(module) {
                 if let Some(path) = resolve_module(module, &ctx.source_dir) {
                     ctx.processed_modules.insert(module.clone());
@@ -1882,10 +1991,12 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
             let names_str: Vec<String> = names
                 .iter()
                 .map(|(name, alias)| {
+                    let name_safe = name.replace("-", "_");
                     if let Some(a) = alias {
-                        format!("{} as {}", name, a)
+                        let alias_safe = a.replace("-", "_");
+                        format!("{} as {}", name_safe, alias_safe)
                     } else {
-                        name.clone()
+                        name_safe
                     }
                 })
                 .collect();
@@ -1984,8 +2095,12 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
             out.push_str(&format!("{}}}\n", indent(ctx.depth)));
         }
         Stmt::Delete(names) => {
-            for _name in names {
-                out.push_str(&format!("{}.clear();\n", indent(ctx.depth)));
+            for name in names {
+                if matches!(env.vars.get(name), Some(Type::Dict(_, _) | Type::List(_) | Type::Str)) {
+                    out.push_str(&format!("{}{}.clear();\n", indent(ctx.depth), name));
+                } else {
+                    out.push_str(&format!("{}drop({});\n", indent(ctx.depth), name));
+                }
             }
         }
         Stmt::EmbedRust(code) => {

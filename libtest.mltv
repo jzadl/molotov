@@ -1,0 +1,155 @@
+#!/usr/bin/env mltv
+
+def get_libs_dir():
+    embed_rust('let home_val = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_else(|_| ".".to_string());')
+    home = embed_rust('home_val')
+    return home + "/.molotov/libs"
+
+def test_passed(name):
+    print("\x1b[32m  PASS:\x1b[0m " + name)
+
+def test_failed(name, detail):
+    d = detail + ""
+    print("\x1b[31m  FAIL:\x1b[0m " + name + " \x1b[90m(" + d + ")\x1b[0m")
+
+libs_dir = get_libs_dir()
+print("\x1b[36mLibrary directory:\x1b[0m " + libs_dir)
+
+embed_rust("""
+    let _ = std::fs::create_dir_all(&format!("{}/testuser/lib-a", &libs_dir));
+    let _ = std::fs::create_dir_all(&format!("{}/testuser/lib-b", &libs_dir));
+    let pkga = format!("{}/testuser/lib-a/package.mpk", &libs_dir);
+    std::fs::write(&pkga, "package.name        lib-a
+package.version     1.0.0
+package.author      tester
+package.description \"A test library\"
+
+deps.lib-b          testuser/lib-b
+").unwrap();
+    let pkgb = format!("{}/testuser/lib-b/package.mpk", &libs_dir);
+    std::fs::write(&pkgb, "package.name        lib-b
+package.version     2.0.0
+package.author      tester
+package.description \"B, needed by A\"
+").unwrap();
+""")
+
+mpk_a = embed_rust('libs_dir.clone() + "/testuser/lib-a/package.mpk"')
+mpk_b = embed_rust('libs_dir.clone() + "/testuser/lib-b/package.mpk"')
+
+passed = 0
+failed = 0
+
+print("\n\x1b[36m--- Test 1: File existence ---\x1b[0m")
+
+if exists(embed_rust('mpk_a.clone()')):
+    test_passed("lib-a package.mpk exists")
+    passed = passed + 1
+else:
+    test_failed("lib-a package.mpk", "file not found")
+    failed = failed + 1
+
+if exists(embed_rust('mpk_b.clone()')):
+    test_passed("lib-b package.mpk exists")
+    passed = passed + 1
+else:
+    test_failed("lib-b package.mpk", "file not found")
+    failed = failed + 1
+
+dne = embed_rust('libs_dir.clone() + "/testuser/nonexistent/package.mpk"')
+if not exists(embed_rust('dne.clone()')):
+    test_passed("nonexistent file returns false")
+    passed = passed + 1
+else:
+    test_failed("nonexistent file", "exists() returned true")
+    failed = failed + 1
+
+print("\n\x1b[36m--- Test 2: Metadata parsing ---\x1b[0m")
+
+content_a = read_file(embed_rust('mpk_a.clone()'))
+ver_a = ""
+author_a = ""
+desc_a = ""
+sp = embed_rust('"".to_string().split_whitespace().map(|s| s.to_string()).collect::<Vec<_>>()')
+for ln in content_a.split("\n"):
+    if ln == "":
+        continue
+    if ln.startswith("package.version"):
+        sp = embed_rust('ln.split_whitespace().map(|s| s.to_string()).collect::<Vec<_>>()')
+        if len(sp) >= 2:
+            ver_a = sp[1]
+    if ln.startswith("package.author"):
+        sp = embed_rust('ln.split_whitespace().map(|s| s.to_string()).collect::<Vec<_>>()')
+        if len(sp) >= 2:
+            author_a = sp[1].strip().strip("\"")
+    if ln.startswith("package.description"):
+        desc_a = embed_rust("ln[(\"package.description\".len()..)].trim().trim_matches('\"').to_string()")
+
+if ver_a == "1.0.0":
+    test_passed("lib-a version is 1.0.0")
+    passed = passed + 1
+else:
+    test_failed("lib-a version", "got: " + ver_a)
+    failed = failed + 1
+
+if author_a == "tester":
+    test_passed("lib-a author is tester")
+    passed = passed + 1
+else:
+    test_failed("lib-a author", "got: " + author_a)
+    failed = failed + 1
+
+if desc_a == "A test library":
+    test_passed("lib-a description parsed correctly")
+    passed = passed + 1
+else:
+    test_failed("lib-a description", "got: " + desc_a)
+    failed = failed + 1
+
+content_b = read_file(embed_rust('mpk_b.clone()'))
+ver_b = ""
+sp2 = embed_rust('"".to_string().split_whitespace().map(|s| s.to_string()).collect::<Vec<_>>()')
+for ln in content_b.split("\n"):
+    if ln == "":
+        continue
+    if ln.startswith("package.version"):
+        sp2 = embed_rust('ln.split_whitespace().map(|s| s.to_string()).collect::<Vec<_>>()')
+        if len(sp2) >= 2:
+            ver_b = sp2[1]
+
+if ver_b == "2.0.0":
+    test_passed("lib-b version is 2.0.0")
+    passed = passed + 1
+else:
+    test_failed("lib-b version", "got: " + ver_b)
+    failed = failed + 1
+
+print("\n\x1b[36m--- Test 3: Dependency declaration ---\x1b[0m")
+
+found = False
+for ln in content_a.split("\n"):
+    if ln == "":
+        continue
+    if ln.startswith("deps.lib-b"):
+        sp3 = embed_rust('ln.split_whitespace().map(|s| s.to_string()).collect::<Vec<_>>()')
+        if len(sp3) >= 2 and sp3[1] == "testuser/lib-b":
+            found = True
+
+if found:
+    test_passed("lib-a declares dep on testuser/lib-b")
+    passed = passed + 1
+else:
+    test_failed("lib-a dep on lib-b", "deps.lib-b line incorrect")
+    failed = failed + 1
+
+print("\n\x1b[36m--- Cleaning up ---\x1b[0m")
+embed_rust("""
+    let _ = std::fs::remove_dir_all(&format!("{}/testuser", &libs_dir));
+""")
+test_passed("test libraries removed")
+
+print("\n\x1b[1;36mResults: " + str(passed) + " passed, " + str(failed) + " failed\x1b[0m")
+if failed > 0:
+    print("\x1b[31mSome tests FAILED.\x1b[0m")
+else:
+    print("\x1b[1;32mAll tests passed!\x1b[0m")

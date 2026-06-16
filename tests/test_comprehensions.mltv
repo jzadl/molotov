@@ -1,0 +1,6 @@
+x = [i * 2 for i in range(5)]
+print(x[0])
+print(x[4])
+y = [i for i in range(10) if i > 5]
+print(len(y))
+print(y[0])

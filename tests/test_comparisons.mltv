@@ -1,0 +1,12 @@
+if 3 == 3:
+    print("eq")
+if 3 != 4:
+    print("ne")
+if 3 < 4:
+    print("lt")
+if 4 > 3:
+    print("gt")
+if 3 <= 3:
+    print("le")
+if 4 >= 4:
+    print("ge")

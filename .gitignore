@@ -9,6 +9,8 @@
 *.bin
 *.out
 *.exe
+a.rs
+/libtest
 
 # IDE / Editor files
 .vscode/

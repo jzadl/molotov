@@ -5,137 +5,415 @@ def get_libs_dir():
     home = embed_rust('home_val')
     return home + "/.molotov/libs"
 
-# Install
-def install(pkg):
-    parts = pkg.split("/")
-    if len(parts) != 2:
-        print("\x1b[31mError: Use format 'user/repo'\x1b[0m")
-        return
-
-    user = parts[0]
-    repo = parts[1]
-
-    libs_dir = get_libs_dir()
-    user_dir = libs_dir + "/" + user
+def get_latest_tag(repo_path):
     embed_rust("""
-        if let Err(e) = std::fs::create_dir_all(&user_dir) {
-            println!("\\x1b[31mError creating directory: {}\\x1b[0m", e);
-            return;
-        }
-    """)
-
-    target_path = user_dir + "/" + repo
-
-    if exists(target_path):
-        print("\x1b[33mPackage " + user + "/" + repo + " is already installed. Use 'mpm update " + user + "/" + repo + "' to update it.\x1b[0m")
-    else:
-        print("\x1b[36mInstalling " + user + "/" + repo + "...\x1b[0m")
-        url = "https://github.com/" + user + "/" + repo + ".git"
-        embed_rust("""
-            let status = std::process::Command::new("git").arg("clone").arg(&url).arg(&target_path).status();
-            if status.is_err() || !status.unwrap().success() {
-                println!("\\x1b[31mError: Failed to clone package. Make sure git is installed.\\x1b[0m");
-                return;
-            }
-        """)
-        print("\x1b[32mSuccessfully installed " + user + "/" + repo + "!\x1b[0m")
-
-# Update
-def update(pkg):
-    parts = pkg.split("/")
-    if len(parts) != 2:
-        print("\x1b[31mError: Use format 'user/repo'\x1b[0m")
-        return
-
-    user = parts[0]
-    repo = parts[1]
-
-    libs_dir = get_libs_dir()
-    target_path = libs_dir + "/" + user + "/" + repo
-
-    if exists(target_path):
-        print("\x1b[36mUpdating " + user + "/" + repo + "...\x1b[0m")
-        embed_rust("""
-            let status = std::process::Command::new("git").arg("-C").arg(&target_path).arg("pull").status();
-            if status.is_err() || !status.unwrap().success() {
-                println!("\\x1b[31mError: Failed to update package via git.\\x1b[0m");
-                return;
-            }
-        """)
-        print("\x1b[32mSuccessfully updated " + user + "/" + repo + "!\x1b[0m")
-    else:
-        print("\x1b[31mError: Package '" + user + "/" + repo + "' is not installed.\x1b[0m")
-
-# Remove
-def remove(pkg):
-    parts = pkg.split("/")
-    if len(parts) != 2:
-        print("\x1b[31mError: Use format 'user/repo'\x1b[0m")
-        return
-
-    user = parts[0]
-    repo = parts[1]
-
-    libs_dir = get_libs_dir()
-    target_path = libs_dir + "/" + user + "/" + repo
-
-    if exists(target_path):
-        print("\x1b[33mRemoving package: " + user + "/" + repo + "\x1b[0m")
-        embed_rust("""
-            if let Err(e) = std::fs::remove_dir_all(&target_path) {
-                println!("\\x1b[31mError deleting files: {}\\x1b[0m", e);
-                return;
-            }
-        """)
-        print("\x1b[32mSuccessfully removed " + user + "/" + repo + "\x1b[0m")
-    else:
-        print("\x1b[31mError: Package '" + user + "/" + repo + "' not found\x1b[0m")
-
-# List
-def list_pkgs():
-    libs_dir = get_libs_dir()
-    print("\x1b[36mInstalled packages in \x1b[90m" + libs_dir + "\x1b[36m:\x1b[0m")
-    embed_rust("""
-        let mut count = 0;
-        if let Ok(user_entries) = std::fs::read_dir(&libs_dir) {
-            for user_entry in user_entries.flatten() {
-                if user_entry.path().is_dir() {
-                    let user_name = user_entry.file_name().to_string_lossy().into_owned();
-                    if let Ok(repo_entries) = std::fs::read_dir(user_entry.path()) {
-                        for repo_entry in repo_entries.flatten() {
-                            if repo_entry.path().is_dir() {
-                                let repo_name = repo_entry.file_name().to_string_lossy().into_owned();
-                                println!("  \x1b[90m{}/\x1b[0m\x1b[92m{}\x1b[0m", user_name, repo_name);
-                                count += 1;
-                            }
-                        }
-                    }
+        let output = std::process::Command::new("git")
+            .arg("-C").arg(&repo_path)
+            .arg("describe").arg("--tags").arg("--abbrev=0")
+            .output();
+        if let Ok(out) = output {
+            if out.status.success() {
+                let tag = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if !tag.is_empty() {
+                    let _ = std::process::Command::new("git")
+                        .arg("-C").arg(&repo_path)
+                        .arg("checkout").arg(format!("tags/{}", tag))
+                        .status();
                 }
             }
         }
-        if count == 0 {
-            println!("  \x1b[90m(No packages installed yet)\x1b[0m");
-        } else {
-            println!("\n  \x1b[90m{} package(s) installed.\x1b[0m", count);
-        }
     """)
 
-# Search installed packages by name
-def search(query):
-    libs_dir = get_libs_dir()
-    print("\x1b[36mSearching for '\x1b[93m" + query + "\x1b[36m':\x1b[0m")
+def show_mpk_info(target):
+    mpk = target + "/package.mpk"
+    if not exists(mpk):
+        return
+    content = read_file(mpk)
+    sp = embed_rust('"".to_string().split_whitespace().map(|s| s.to_string()).collect::<Vec<_>>()')
+    val = ""
+    for ln in content.split("\n"):
+        ln = ln.strip()
+        if ln == "" or ln.startswith("#"):
+            continue
+        if ln.startswith("package.version"):
+            sp = embed_rust('ln.split_whitespace().map(|s| s.to_string()).collect::<Vec<_>>()')
+            if len(sp) >= 2:
+                print("  \x1b[90mVersion:\x1b[0m \x1b[92m" + sp[1] + "\x1b[0m")
+        if ln.startswith("package.author"):
+            sp = embed_rust('ln.split_whitespace().map(|s| s.to_string()).collect::<Vec<_>>()')
+            if len(sp) >= 2:
+                val = sp[1].strip().strip("\"")
+                print("  \x1b[90mAuthor:\x1b[0m \x1b[93m" + val + "\x1b[0m")
+        if ln.startswith("package.description"):
+            val = embed_rust("ln[(\"package.description\".len()..)].trim().trim_matches('\"').to_string()")
+            print("  \x1b[90mDescription:\x1b[0m \x1b[96m" + val + "\x1b[0m")
+
+def install_mpk_deps(mpk, parent_user, parent_repo):
+    pu = parent_user + ""
+    pr = parent_repo + ""
+    if not exists(mpk):
+        return
+    content = read_file(mpk)
+    sp = embed_rust('"".to_string().split_whitespace().map(|s| s.to_string()).collect::<Vec<_>>()')
+    dep = ""
+    full = ""
+    dp = "".split(" ")
+    dn = ""
+    dv = ""
+    dp2 = "".split(" ")
+    for ln in content.split("\n"):
+        ln = ln.strip()
+        if ln == "" or ln.startswith("#"):
+            continue
+        if ln.startswith("deps."):
+            sp = embed_rust('ln.split_whitespace().map(|s| s.to_string()).collect::<Vec<_>>()')
+            if len(sp) >= 2:
+                dep = sp[1].strip()
+                if dep != "" and "/" in dep:
+                    if "@" in dep:
+                        dp = dep.split("@")
+                        dn = dp[0]
+                        dv = dp[1]
+                        dp2 = dn.split("/")
+                        if len(dp2) >= 2:
+                            full = embed_rust('pu.clone() + "/" + &pr + "/" + &dn + "@" + &dv')
+                            print("\x1b[36m  Installing dependency: " + dn + "@" + dv + "\x1b[0m")
+                            install(full)
+                    else:
+                        dp2 = dep.split("/")
+                        if len(dp2) >= 2:
+                            full = embed_rust('pu.clone() + "/" + &pr + "/" + &dep')
+                            print("\x1b[36m  Installing dependency: " + dep + "\x1b[0m")
+                            install(full)
+
+def install_addon_deps(apath, parent_user, parent_repo):
+    pu = parent_user + ""
+    pr = parent_repo + ""
+    if not exists(apath):
+        return
+    print("\x1b[36m  Checking dependencies...\x1b[0m")
+    content = read_file(apath)
+    dep = ""
+    full = ""
+    dp = "".split(" ")
+    dn = ""
+    dv = ""
+    dp2 = "".split(" ")
+    for ln in content.split("\n"):
+        ln = ln.strip()
+        if ln.startswith("# mpm: require"):
+            dep = ln.replace("# mpm: require", "").strip()
+            dep = dep.split("#")[0].strip()
+            if dep != "":
+                if "@" in dep:
+                    dp = dep.split("@")
+                    dn = dp[0]
+                    dv = dp[1]
+                    dp2 = dn.split("/")
+                    if len(dp2) >= 2:
+                        full = embed_rust('pu.clone() + "/" + &pr + "/" + &dn + "@" + &dv')
+                        print("\x1b[36m  Installing dependency: " + dn + "@" + dv + "\x1b[0m")
+                        install(full)
+                else:
+                    dp2 = dep.split("/")
+                    if len(dp2) >= 2:
+                        full = embed_rust('pu.clone() + "/" + &pr + "/" + &dep')
+                        print("\x1b[36m  Installing dependency: " + dep + "\x1b[0m")
+                        install(full)
+
+def install_deps(target, parent_user, parent_repo):
+    pu = parent_user + ""
+    pr = parent_repo + ""
+    mpk = embed_rust('target.clone() + "/package.mpk"')
+    install_mpk_deps(mpk, embed_rust('pu.clone()'), embed_rust('pr.clone()'))
+    addon = embed_rust('target.clone() + "/addon.mltv"')
+    install_addon_deps(addon, pu, pr)
+
+def install(pkg):
+    n = pkg
+    if n != "" and embed_rust('n.ends_with("/")'):
+        n = embed_rust('n.trim_end_matches("/").to_string()')
+    name = n
+    user = ""
+    repo = ""
+    subpath = ""
+    version = ""
+    sp = "".split(" ")
+    if "@" in name:
+        sp = name.split("@")
+        name = sp[0]
+        version = sp[1]
+    sp = name.split("/")
+    if len(sp) >= 2:
+        user = sp[0]
+        repo = sp[1]
+        if len(sp) > 2:
+            subpath = sp[2]
+            for i in range(3, len(sp)):
+                subpath = subpath + "/" + sp[i]
+    if user == "" or repo == "":
+        print("\x1b[31mError: Use format 'user/repo[/subpath]' or 'user/repo[/subpath]@version'\x1b[0m")
+        return
+    dir = get_libs_dir()
+    user_dir = embed_rust('dir.clone() + "/" + &user')
+    repo_root = embed_rust('dir.clone() + "/" + &user + "/" + &repo')
+    target = ""
+    if subpath != "":
+        target = embed_rust('repo_root.clone() + "/" + &subpath')
+    else:
+        target = embed_rust('repo_root.clone()')
+    if exists(target):
+        pn = embed_rust('user.clone() + "/" + &repo')
+        if subpath != "":
+            pn = pn + "/" + subpath
+        print("\x1b[33mPackage " + pn + " is already installed. Use 'mpm update " + pn + "' to update it.\x1b[0m")
+        return
+    pn2 = embed_rust('user.clone() + "/" + &repo')
+    if subpath != "":
+        pn2 = pn2 + "/" + subpath
+    print("\x1b[36mInstalling " + pn2)
     embed_rust("""
-        let mut count = 0;
-        if let Ok(user_entries) = std::fs::read_dir(&libs_dir) {
-            for user_entry in user_entries.flatten() {
-                if user_entry.path().is_dir() {
-                    let user_name = user_entry.file_name().to_string_lossy().into_owned();
-                    if let Ok(repo_entries) = std::fs::read_dir(user_entry.path()) {
-                        for repo_entry in repo_entries.flatten() {
-                            if repo_entry.path().is_dir() {
-                                let repo_name = repo_entry.file_name().to_string_lossy().into_owned();
-                                if user_name.contains(&*query) || repo_name.contains(&*query) {
-                                    println!("  \x1b[90m{}/\x1b[0m\x1b[92m{}\x1b[0m", user_name, repo_name);
+        if let Err(e) = std::fs::create_dir_all(&user_dir) {
+            println!("\x1b[31mError creating directory: {}\x1b[0m", e);
+            return;
+        }
+    """)
+    url = "https://github.com/" + user + "/" + repo + ".git"
+    if exists(repo_root):
+        print("\x1b[36m  Using existing clone...\x1b[0m")
+        if version != "":
+            print(" \x1b[36m(" + version + ")\x1b[0m")
+            embed_rust("""
+                let co = std::process::Command::new("git")
+                    .arg("-C").arg(&repo_root)
+                    .arg("checkout").arg(&version)
+                    .status();
+                if co.is_err() || !co.unwrap().success() {
+                    let _ = std::process::Command::new("git")
+                        .arg("-C").arg(&repo_root)
+                        .arg("checkout").arg(format!("tags/{}", version))
+                        .status();
+                }
+            """)
+    elif version != "":
+        print(" \x1b[36m(" + version + ")\x1b[0m")
+        embed_rust("""
+            let status = std::process::Command::new("git")
+                .arg("clone").arg("--branch").arg(&version).arg("--single-branch")
+                .arg(&url).arg(&repo_root).status();
+            if status.is_err() || !status.unwrap().success() {
+                println!("\x1b[31mError: Failed to clone package. Make sure the version '{}' exists.\x1b[0m", version);
+                return;
+            }
+        """)
+    else:
+        embed_rust("""
+            let status = std::process::Command::new("git").arg("clone").arg(&url).arg(&repo_root).status();
+            if status.is_err() || !status.unwrap().success() {
+                println!("\x1b[31mError: Failed to clone package. Make sure git is installed.\x1b[0m");
+                return;
+            }
+        """)
+        print("\x1b[36m  Looking for latest stable tag...\x1b[0m")
+        embed_rust("""
+            let output = std::process::Command::new("git")
+                .arg("-C").arg(&repo_root)
+                .arg("describe").arg("--tags").arg("--abbrev=0")
+                .output();
+            if let Ok(out) = output {
+                if out.status.success() {
+                    let tag = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                    if !tag.is_empty() {
+                        println!("\x1b[36m  Checking out tag: {}\x1b[0m", tag);
+                        let _ = std::process::Command::new("git")
+                            .arg("-C").arg(&repo_root)
+                            .arg("checkout").arg(format!("tags/{}", tag))
+                            .status();
+                    }
+                }
+            }
+        """)
+    if subpath != "":
+        show_mpk_info(embed_rust('repo_root.clone() + "/" + &subpath'))
+        print("\x1b[90m  Scanning for dependencies...\x1b[0m")
+        install_deps(embed_rust('repo_root.clone() + "/" + &subpath'), user, repo)
+    else:
+        show_mpk_info(embed_rust('repo_root.clone()'))
+        print("\x1b[90m  Scanning for dependencies...\x1b[0m")
+        install_deps(embed_rust('repo_root.clone()'), user, repo)
+    print("\x1b[32mSuccessfully installed " + pn2 + "!\x1b[0m")
+
+def update(pkg):
+    n = pkg
+    if n != "" and embed_rust('n.ends_with("/")'):
+        n = embed_rust('n.trim_end_matches("/").to_string()')
+    user = ""
+    repo = ""
+    subpath = ""
+    version = ""
+    sp = "".split(" ")
+    name = n
+    if "@" in name:
+        sp = name.split("@")
+        name = sp[0]
+        version = sp[1]
+    sp = name.split("/")
+    if len(sp) >= 2:
+        user = sp[0]
+        repo = sp[1]
+        if len(sp) > 2:
+            subpath = sp[2]
+            for i in range(3, len(sp)):
+                subpath = subpath + "/" + sp[i]
+    if user == "" or repo == "":
+        print("\x1b[31mError: Use format 'user/repo[/subpath]' or 'user/repo[/subpath]@version'\x1b[0m")
+        return
+    dir = get_libs_dir()
+    repo_root = embed_rust('dir.clone() + "/" + &user + "/" + &repo')
+    pn = user + "/" + repo
+    if subpath != "":
+        pn = pn + "/" + subpath
+    if exists(repo_root):
+        print("\x1b[36mUpdating " + pn + "...\x1b[0m")
+        embed_rust("""
+            let status = std::process::Command::new("git").arg("-C").arg(&repo_root).arg("pull").status();
+            if status.is_err() || !status.unwrap().success() {
+                println!("\x1b[31mError: Failed to update package via git.\x1b[0m");
+                return;
+            }
+        """)
+        if version != "":
+            print("\x1b[36m  Staying on version " + version + "\x1b[0m")
+            embed_rust("""
+                let co = std::process::Command::new("git")
+                    .arg("-C").arg(&repo_root)
+                    .arg("checkout").arg(&version)
+                    .status();
+                if co.is_err() || !co.unwrap().success() {
+                    println!("\x1b[36m  Version '{}' not found as a branch, trying tag...\x1b[0m", version);
+                    let _ = std::process::Command::new("git")
+                        .arg("-C").arg(&repo_root)
+                        .arg("checkout").arg(format!("tags/{}", version))
+                        .status();
+                }
+            """)
+        else:
+            print("\x1b[36m  Checking for latest tag...\x1b[0m")
+            embed_rust("""
+                let output = std::process::Command::new("git")
+                    .arg("-C").arg(&repo_root)
+                    .arg("describe").arg("--tags").arg("--abbrev=0")
+                    .output();
+                if let Ok(out) = output {
+                    if out.status.success() {
+                        let tag = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                        if !tag.is_empty() {
+                            println!("\x1b[36m  Checking out latest tag: {}\x1b[0m", tag);
+                            let _ = std::process::Command::new("git")
+                                .arg("-C").arg(&repo_root)
+                                .arg("checkout").arg(format!("tags/{}", tag))
+                                .status();
+                        }
+                    }
+                }
+            """)
+        if subpath != "":
+            show_mpk_info(embed_rust('repo_root.clone() + "/" + &subpath'))
+        else:
+            show_mpk_info(embed_rust('repo_root.clone()'))
+        print("\x1b[32mSuccessfully updated " + pn + "!\x1b[0m")
+    else:
+        print("\x1b[31mError: Package '" + pn + "' is not installed.\x1b[0m")
+
+def remove(pkg):
+    n = pkg
+    if n != "" and embed_rust('n.ends_with("/")'):
+        n = embed_rust('n.trim_end_matches("/").to_string()')
+    sp = n.split("/")
+    if len(sp) < 2:
+        print("\x1b[31mError: Use format 'user/repo[/subpath]'\x1b[0m")
+        return
+    user = sp[0]
+    repo = sp[1]
+    dir = get_libs_dir()
+    repo_root = embed_rust('dir.clone() + "/" + &user + "/" + &repo')
+    pn = user + "/" + repo
+    target = embed_rust('repo_root.clone()')
+    if len(sp) >= 3:
+        pn = pn + "/" + sp[2]
+        target = embed_rust('repo_root.clone() + "/" + &sp[2]')
+    if exists(target):
+        print("\x1b[33mRemoving package: " + pn + "\x1b[0m")
+        embed_rust("""
+            if let Err(e) = std::fs::remove_dir_all(&target) {
+                println!("\x1b[31mError deleting files: {}\x1b[0m", e);
+                return;
+            }
+        """)
+        print("\x1b[32mSuccessfully removed " + pn + "\x1b[0m")
+    else:
+        print("\x1b[31mError: Package '" + pn + "' not found\x1b[0m")
+
+def list_pkgs():
+    dir = get_libs_dir()
+    print("\x1b[36mInstalled packages in \x1b[90m" + dir + "\x1b[36m:\x1b[0m")
+    embed_rust("""
+        fn read_meta(path: &std::path::Path) -> String {
+            if let Ok(content) = std::fs::read_to_string(path) {
+                let mut ver = String::new();
+                let mut author = String::new();
+                for line in content.lines() {
+                    let ln = line.trim();
+                    if ln.is_empty() { continue; }
+                    if ln.starts_with("package.version") {
+                        let parts: Vec<&str> = ln.split_whitespace().collect();
+                        if parts.len() >= 2 { ver = parts[1].to_string(); }
+                    }
+                    if ln.starts_with("package.author") {
+                        let parts: Vec<&str> = ln.split_whitespace().collect();
+                        if parts.len() >= 2 {
+                            author = parts[1].trim_matches('"').to_string();
+                        }
+                    }
+                }
+                let e = 27 as char;
+                if !ver.is_empty() && !author.is_empty() {
+                    return format!(" {0}[90mv{1} ({2}){0}[0m", e, ver, author);
+                }
+                if !ver.is_empty() {
+                    return format!(" {0}[90mv{1}{0}[0m", e, ver);
+                }
+                if !author.is_empty() {
+                    return format!(" {0}[90m({1}){0}[0m", e, author);
+                }
+            }
+            String::new()
+        }
+        let e = 27 as char;
+        let mut count = 0i64;
+        if let Ok(users) = std::fs::read_dir(&dir) {
+            for u in users.flatten() {
+                if !u.path().is_dir() { continue; }
+                let uname = u.file_name().to_string_lossy().into_owned();
+                if let Ok(repos) = std::fs::read_dir(u.path()) {
+                    for r in repos.flatten() {
+                        if !r.path().is_dir() { continue; }
+                        let rname = r.file_name().to_string_lossy().into_owned();
+                        let rp = r.path();
+                        let mpk_path = rp.join("package.mpk");
+                        if mpk_path.exists() {
+                            let meta = read_meta(&mpk_path);
+                            println!(" {0}[90m{1}/{0}[0m{0}[92m{2}{0}[0m{3}", e, uname, rname, meta);
+                            count += 1;
+                        }
+                        if let Ok(subs) = std::fs::read_dir(&rp) {
+                            for s in subs.flatten() {
+                                if !s.path().is_dir() { continue; }
+                                let sname = s.file_name().to_string_lossy().into_owned();
+                                let smpk = s.path().join("package.mpk");
+                                if smpk.exists() {
+                                    let meta = read_meta(&smpk);
+                                    println!(" {0}[90m{1}/{0}[0m{0}[92m{2}/{3}{0}[0m{4}", e, uname, rname, sname, meta);
                                     count += 1;
                                 }
                             }
@@ -145,50 +423,125 @@ def search(query):
             }
         }
         if count == 0 {
-            println!("  \x1b[90mNo matches found.\x1b[0m");
+            println!(" {0}[90m(No packages installed yet){0}[0m", e);
+        } else {
+            println!("\n {0}[90m{1} package(s) installed.{0}[0m", e, count);
+        }
+    """)
+
+def search(query):
+    dir = get_libs_dir()
+    print("\x1b[36mSearching for '\x1b[93m" + query + "\x1b[36m':\x1b[0m")
+    embed_rust("""
+        fn read_meta(path: &std::path::Path) -> String {
+            if let Ok(content) = std::fs::read_to_string(path) {
+                let mut ver = String::new();
+                let mut author = String::new();
+                for line in content.lines() {
+                    let ln = line.trim();
+                    if ln.is_empty() { continue; }
+                    if ln.starts_with("package.version") {
+                        let parts: Vec<&str> = ln.split_whitespace().collect();
+                        if parts.len() >= 2 { ver = parts[1].to_string(); }
+                    }
+                    if ln.starts_with("package.author") {
+                        let parts: Vec<&str> = ln.split_whitespace().collect();
+                        if parts.len() >= 2 {
+                            author = parts[1].trim_matches('"').to_string();
+                        }
+                    }
+                }
+                let e = 27 as char;
+                if !ver.is_empty() && !author.is_empty() {
+                    return format!(" {0}[90mv{1} ({2}){0}[0m", e, ver, author);
+                }
+                if !ver.is_empty() {
+                    return format!(" {0}[90mv{1}{0}[0m", e, ver);
+                }
+                if !author.is_empty() {
+                    return format!(" {0}[90m({1}){0}[0m", e, author);
+                }
+            }
+            String::new()
+        }
+        let e = 27 as char;
+        let mut count = 0i64;
+        if let Ok(users) = std::fs::read_dir(&dir) {
+            for u in users.flatten() {
+                if !u.path().is_dir() { continue; }
+                let uname = u.file_name().to_string_lossy().into_owned();
+                if let Ok(repos) = std::fs::read_dir(u.path()) {
+                    for r in repos.flatten() {
+                        if !r.path().is_dir() { continue; }
+                        let rname = r.file_name().to_string_lossy().into_owned();
+                        let rp = r.path();
+                        let mpk_path = rp.join("package.mpk");
+                        if mpk_path.exists() && (uname.contains(&*query) || rname.contains(&*query)) {
+                            let meta = read_meta(&mpk_path);
+                            println!(" {0}[90m{1}/{0}[0m{0}[92m{2}{0}[0m{3}", e, uname, rname, meta);
+                            count += 1;
+                        }
+                        if let Ok(subs) = std::fs::read_dir(&rp) {
+                            for s in subs.flatten() {
+                                if !s.path().is_dir() { continue; }
+                                let sname = s.file_name().to_string_lossy().into_owned();
+                                let smpk = s.path().join("package.mpk");
+                                if smpk.exists() && (uname.contains(&*query) || rname.contains(&*query) || sname.contains(&*query)) {
+                                    let meta = read_meta(&smpk);
+                                    println!(" {0}[90m{1}/{0}[0m{0}[92m{2}/{3}{0}[0m{4}", e, uname, rname, sname, meta);
+                                    count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if count == 0 {
+            println!(" {0}[90mNo matches found.{0}[0m", e);
         }
     """)
 
 def print_help():
     print("\x1b[1;35mMolotov Package Manager\x1b[0m")
     print("\x1b[36mUsage:\x1b[0m")
-    print("  mpm \x1b[32minstall\x1b[0m \x1b[90m<user/repo>\x1b[0m   Install a package")
-    print("  mpm \x1b[33mupdate\x1b[0m  \x1b[90m<user/repo>\x1b[0m   Update an installed package")
-    print("  mpm \x1b[31mremove\x1b[0m  \x1b[90m<user/repo>\x1b[0m   Remove a package")
+    print("  mpm \x1b[32minstall\x1b[0m \x1b[90m<user/repo[/subpath]>[@version]\x1b[0m   Install a package")
+    print("  mpm \x1b[33mupdate\x1b[0m  \x1b[90m<user/repo[/subpath]>[@version]\x1b[0m   Update an installed package")
+    print("  mpm \x1b[31mremove\x1b[0m  \x1b[90m<user/repo[/subpath]>\x1b[0m   Remove a package")
     print("  mpm \x1b[34mlist\x1b[0m              List all installed packages")
     print("  mpm \x1b[35msearch\x1b[0m  \x1b[90m<query>\x1b[0m       Search installed packages")
     print("  mpm \x1b[90mhelp\x1b[0m              Show this help message")
 
-args_list = args()
+cmds = args()
 
-if len(args_list) < 2:
+if len(cmds) < 2:
     print_help()
 else:
-    command = args_list[1]
-    if command == "install":
-        if len(args_list) < 3:
+    cmd = cmds[1]
+    if cmd == "install":
+        if len(cmds) < 3:
             print("\x1b[31mError: Missing package name\x1b[0m")
         else:
-            install(args_list[2])
-    elif command == "update":
-        if len(args_list) < 3:
+            install(cmds[2])
+    elif cmd == "update":
+        if len(cmds) < 3:
             print("\x1b[31mError: Missing package name\x1b[0m")
         else:
-            update(args_list[2])
-    elif command == "remove":
-        if len(args_list) < 3:
+            update(cmds[2])
+    elif cmd == "remove":
+        if len(cmds) < 3:
             print("\x1b[31mError: Missing package name\x1b[0m")
         else:
-            remove(args_list[2])
-    elif command == "list":
+            remove(cmds[2])
+    elif cmd == "list":
         list_pkgs()
-    elif command == "search":
-        if len(args_list) < 3:
+    elif cmd == "search":
+        if len(cmds) < 3:
             print("\x1b[31mError: Missing search query\x1b[0m")
         else:
-            search(args_list[2])
-    elif command == "help":
+            search(cmds[2])
+    elif cmd == "help":
         print_help()
     else:
-        print("\x1b[31mUnknown command: " + command + "\x1b[0m")
+        print("\x1b[31mUnknown command: " + cmd + "\x1b[0m")
         print_help()

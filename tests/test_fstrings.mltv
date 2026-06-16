@@ -1,0 +1,4 @@
+name = "world"
+print(f"hello {name}")
+x = 42
+print(f"x={x}")

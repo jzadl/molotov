@@ -1,0 +1,5 @@
+a = ["a", "b", "c"]
+i = 0
+while i < len(a):
+    print(i)
+    i = i + 1

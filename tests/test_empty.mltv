@@ -1,0 +1,10 @@
+a = []
+b = {}
+s = ""
+print(len(a))
+print(len(b))
+print(len(s))
+a.append(1)
+b["k"] = 2
+print(len(a))
+print(len(b))

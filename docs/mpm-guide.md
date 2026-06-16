@@ -1,132 +1,266 @@
-# MPM: Molotov Package Manager Guide
+# Molotov Package Manager (mpm)
 
-MPM is the official package manager for the Molotov programming language. It allows you to download, manage, and use libraries hosted on GitHub.
+mpm is a package manager for Molotov projects. It installs packages from GitHub into `~/.molotov/libs/` using `.mpk` metadata files for versioning, authorship, and dependency tracking.
 
-## How it works
+---
 
-MPM is a GitHub-first package manager. It clones repositories directly from GitHub into a global library folder on your machine. The Molotov compiler (`mltv`) is configured to search this folder automatically when you use the `import` statement.
+## Quick Start
 
-Libraries are stored under: `~/.molotov/libs/<user>/<repo>/`
+### Install a package
 
-Each package is namespaced by its GitHub username, so two different users can publish a library with the same name without any conflict. For example, `timmy/cool-library` and `pablo/cool-library` can both be installed and used at the same time.
-
-## Installation
-
-MPM is installed automatically when you run the main Molotov installation scripts:
-
-### Linux / macOS
-```bash
-chmod +x install.sh && ./install.sh
+```
+mpm install user/repo
+mpm install user/repo@1.0.0
+mpm install user/repo/subpath
+mpm install user/repo/subpath@1.0.0
 ```
 
-### Windows (PowerShell)
-```powershell
-.\install.ps1
+### List installed packages
+
+```
+mpm list
 ```
 
-Once installed, the `mpm` command will be available in your terminal.
+### Search through installed packages
+
+```
+mpm search query
+```
+
+### Update a package
+
+```
+mpm update user/repo
+mpm update user/repo/subpath
+```
+
+### Remove a package
+
+```
+mpm remove user/repo
+mpm remove user/repo/subpath
+```
+
+---
+
+## Package Format (.mpk)
+
+Each package directory must contain a `package.mpk` file in dot notation. Lines use the form `key value`. Comments start with `#`. Quoted strings use double quotes `""`.
+
+Example:
+
+```
+package.name        greeter
+package.version     1.2.3
+package.author      jzadl
+package.description "Welcome and farewell messages"
+
+deps.math-utils     molotov/math-utils@1.0.0
+deps.str-utils      molotov/str-utils@0.5.0
+```
+
+### Supported fields
+
+| Field | Description |
+| --- | --- |
+| `package.name` | Package display name |
+| `package.version` | Semantic version string |
+| `package.author` | Author name or handle |
+| `package.description` | Short description in double quotes |
+| `deps.*` | Dependency declaration (see below) |
+
+### Whitespace rules
+
+Actual `.mpk` files may use multiple spaces or tabs between the key and the value, not just a single space.
+
+---
+
+## Subpath Packages
+
+A single GitHub repository can host multiple packages in subdirectories. The format is:
+
+```
+mpm install user/repo/subpackage
+mpm install user/repo/a/b/c
+```
+
+When you install `user/repo/subpath`, mpm clones `github.com/user/repo.git` to `~/.molotov/libs/user/repo/` and reads metadata from `subpath/package.mpk`.
+
+---
+
+## Dependency Resolution
+
+Dependencies are declared with `deps.*` lines in `package.mpk`:
+
+```
+deps.name     user/repo[@version]
+```
+
+Dependency specs follow the same format as install targets. When a dependency is declared, it is resolved relative to the parent package's monorepo.
+
+Example: If `jzadl/mpk-libtests/greeter` declares:
+
+```
+deps.math-utils     molotov/math-utils@1.0.0
+```
+
+Then mpm installs `jzadl/mpk-libtests/molotov/math-utils@1.0.0` (a subpath within the same repository clone) instead of trying to fetch `github.com/molotov/math-utils.git` separately.
+
+### How it works
+
+1. The parent package's repo is cloned once.
+2. Dependencies with `user/repo` format are treated as subpaths inside the same clone.
+3. The repo is not re-cloned for dependency installations.
+4. If a version is specified, git attempts to check out the corresponding branch or tag.
+
+---
+
+## Directory Layout
+
+After installation, the filesystem looks like:
+
+```
+~/.molotov/libs/
+  user/
+    repo/
+      package.mpk
+      subpackage/
+        package.mpk
+      another-sub/
+        package.mpk
+```
+
+---
 
 ## Commands
 
-### `install`: Install a package
-Downloads a library from GitHub using the `user/repo` format:
-```bash
-mpm install jzadl/my-lib
-```
-If the package is already installed, MPM will let you know and suggest using `mpm update` instead.
+### install
 
-### `update`: Update a package
-Pulls the latest changes from GitHub for an already-installed package:
-```bash
-mpm update jzadl/my-lib
+Clones a GitHub repository and reads package metadata.
+
+```
+mpm install user/repo[/subpath][@version]
 ```
 
-### `remove`: Remove a package
-Deletes a library from your system. Requires the full `user/repo` format:
-```bash
-mpm remove jzadl/my-lib
-```
+Steps:
+1. Parse the package spec into user, repo, subpath, and version.
+2. Clone `https://github.com/user/repo.git` to `~/.molotov/libs/user/repo/`.
+3. If no version is specified, check out the latest git tag.
+4. Display metadata from `package.mpk` (version, author, description).
+5. Scan for dependencies declared in `package.mpk` and install them.
+6. If the repo already exists, skip cloning and just check out the requested version.
 
-### `list`: List installed packages
-Shows all installed packages, grouped by user:
-```bash
+### list
+
+Lists all installed packages with their version and author metadata.
+
+```
 mpm list
 ```
-Example output:
-```
-Installed packages in ~/.molotov/libs:
-  jzadl/my-lib
-  timmy/cool-library
-  pablo/cool-library
 
-  3 package(s) installed.
-```
+Scans `~/.molotov/libs/` for all directories containing `package.mpk`, including subdirectory packages. Displays each package with its version and author.
 
-### `search`: Search installed packages
-Filters your installed packages by name. Matches against both the username and the repo name:
-```bash
-mpm search cool-library
+### search
+
+Filters installed packages by a query string.
+
 ```
-Example output:
-```
-Searching for 'cool-library':
-  timmy/cool-library
-  pablo/cool-library
+mpm search query
 ```
 
-### `help`: Show usage
-```bash
-mpm help
+Matches against user name, repo name, and subpath name. Shows matching packages with version and author metadata.
+
+### update
+
+Updates an installed package via git pull.
+
+```
+mpm update user/repo[/subpath][@version]
 ```
 
-## Creating and Publishing Packages
+Steps:
+1. Run `git pull` in the repository directory.
+2. If a version was specified, check out that branch or tag.
+3. If no version was specified, check out the latest tag.
+4. Display updated metadata.
 
-Creating a Molotov package is simple:
+### remove
 
-1. Create a new public repository on GitHub.
-2. Add your `.mltv` files to the repository.
-3. If your package has a main entry point, name it the same as the repository (e.g., for repo `my-lib`, create `my-lib.mltv`).
+Removes the entire repository directory.
 
-Now anyone can install your library with:
-```bash
-mpm install your_username/your_repo
+```
+mpm remove user/repo
 ```
 
-## Importing Packages
+Since subpath packages share a repository, removing `user/repo` removes all subpackages within it.
 
-Packages are namespaced by `user/repo`, so imports use the double-colon `::` syntax.
+---
 
-### Importing the main module
-If `timmy` has a repo called `hacking-library` containing `hacking-library.mltv`:
-```python
-import timmy::hacking-library
-timmy::hacking-library.some_function()
+## Building mpm
+
+mpm is written in Molotov and compiled through the Molotov transpiler (mltv).
+
+```
+cd /home/jzadl/molotov
+cargo run -- deploy mpm.mltv -o mpm
+./mpm install user/repo
 ```
 
-Or with an alias to keep things short:
-```python
-import timmy::hacking-library as hacking-library
-hacking-library.some_function()
+### install.sh
+
+The project includes an `install.sh` script that builds both mltv and mpm and installs them to `~/.local/bin/`.
+
+```
+./install.sh
+./install.sh --no-destruct
 ```
 
-### Importing specific submodules
-If the repo contains other files, like `utils.mltv`, navigate into them with `::`:
-```python
-import timmy::hacking-library::utils
-utils.helper()
+The `--no-destruct` flag skips the destruction phase.
+---
+
+## libtest
+
+The project includes `libtest.mltv` which tests core library operations:
+
+- File existence checks with `exists()`
+- `package.mpk` parsing: version, author, description
+- Dependency declaration detection
+
+Run it with:
+
+```
+./libtest
 ```
 
-### Handling name collisions
-Since two users can have repos with the same name, you can install and use both simultaneously by aliasing them:
-```python
-import timmy::hacking-library as timmys_lib
-import pablo::hacking-library as pablos_lib
+Or rebuild it with:
 
-timmys_lib.some_function()
-pablos_lib.some_function()
+```
+cargo run -- deploy libtest.mltv -o libtest
 ```
 
-### Common Pitfalls
-- Always use the full `user/repo` format for `install`, `update`, and `remove`.
-- If `import user::repo` fails, check that the repo contains a file named `repo.mltv` at its root.
-- Submodule files must be referenced explicitly with `::`, they are not imported automatically.
+---
+
+## Test Repo
+
+The test repository is at `https://github.com/jzadl/mpk-libtests` and contains four packages in subdirectories:
+
+| Package | Path | Version | Dependencies |
+| --- | --- | --- | --- |
+| greeter | `greeter/` | 1.2.3 | molotov/math-utils@1.0.0, molotov/str-utils@0.5.0 |
+| hello-lib | `hello-lib/` | 2.1.0 | molotov/str-utils@0.5.0 |
+| math-utils | `math-utils/` | 1.0.0 | none |
+| str-utils | `str-utils/` | 0.5.0 | none |
+
+---
+
+## File Reference
+
+| File | Purpose |
+| --- | --- |
+| `mpm.mltv` | Main package manager source |
+| `libtest.mltv` | Library operation tests |
+| `mpm-guide.md` | This guide |
+| `mpk_context.md` | Original mpk format draft |
+| `mpm.rs` | Transpiled Rust output (generated) |
+| `mpm` | Compiled binary (generated) |
+| `libtest` | Compiled test binary (generated) |

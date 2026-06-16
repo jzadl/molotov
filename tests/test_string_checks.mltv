@@ -1,0 +1,6 @@
+print("hello".isalpha())
+print("123".isdigit())
+print("abc123".isalnum())
+print("   ".isspace())
+print("Hello".islower())
+print("HELLO".isupper())

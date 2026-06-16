@@ -1,0 +1,7 @@
+x = 0
+r = 0
+while x < 5:
+    if x % 2 == 0:
+        r = r + x
+    x = x + 1
+print(r)

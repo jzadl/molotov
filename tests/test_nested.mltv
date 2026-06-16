@@ -1,0 +1,9 @@
+x = 5
+y = 10
+if x > 0:
+    if y > 0:
+        print("both_pos")
+    else:
+        print("only_x")
+else:
+    print("neither")

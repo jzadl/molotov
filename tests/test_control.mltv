@@ -1,0 +1,22 @@
+if True:
+    print("if_true")
+x = 0
+if x > 0:
+    print("pos")
+else:
+    print("non_pos")
+x = 5
+if x > 10:
+    print("big")
+elif x > 0:
+    print("medium")
+else:
+    print("small")
+r = 1
+n = 3
+while n > 0:
+    r = r * n
+    n = n - 1
+print(r)
+for i in range(5):
+    print(i)

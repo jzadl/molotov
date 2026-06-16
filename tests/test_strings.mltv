@@ -1,0 +1,7 @@
+print("hello".upper())
+print("HELLO".lower())
+print("  hi  ".strip())
+print("a b c".replace(" ", ","))
+print(len("hello"))
+print("hello".startswith("he"))
+print("hello".endswith("lo"))

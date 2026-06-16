@@ -476,13 +476,23 @@ impl Parser {
         }
     }
 
+    fn parse_module_segment(&mut self) -> Result<String, String> {
+        let mut segment = self.expect_ident()?;
+        while self.check(&Token::Minus) {
+            self.advance();
+            segment.push('-');
+            segment.push_str(&self.expect_ident()?);
+        }
+        Ok(segment)
+    }
+
     fn parse_module_path(&mut self) -> Result<String, String> {
-        let mut path = self.expect_ident()?;
+        let mut path = self.parse_module_segment()?;
         while self.check(&Token::Colon) {
             self.advance();
             if self.check(&Token::Colon) {
                 self.advance();
-                path.push_str(&format!("::{}", self.expect_ident()?));
+                path.push_str(&format!("::{}", self.parse_module_segment()?));
             } else {
                 break;
             }
@@ -505,7 +515,7 @@ impl Parser {
     fn parse_from_import(&mut self) -> Result<Stmt, String> {
         self.advance();
         let module = {
-            let mut path = self.expect_ident()?;
+            let mut path = self.parse_module_segment()?;
             while self.check(&Token::Colon) {
                 self.advance();
                 if self.check(&Token::Colon) {
@@ -513,7 +523,7 @@ impl Parser {
                     if self.check(&Token::KwImport) {
                         break;
                     }
-                    path.push_str(&format!("::{}", self.expect_ident()?));
+                    path.push_str(&format!("::{}", self.parse_module_segment()?));
                 } else {
                     break;
                 }
@@ -523,10 +533,10 @@ impl Parser {
         self.expect(&Token::KwImport)?;
         let mut names = Vec::new();
         loop {
-            let name = self.expect_ident()?;
+            let name = self.parse_module_segment()?;
             let alias = if self.check(&Token::KwAs) {
                 self.advance();
-                Some(self.expect_ident()?)
+                Some(self.parse_module_segment()?)
             } else {
                 None
             };

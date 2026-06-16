@@ -1,0 +1,14 @@
+x = [3, 1, 2]
+x.sort()
+print(x[1])
+print(len(x))
+x.append(4)
+print(len(x))
+x.reverse()
+print(x[0])
+y = [1, 2, 3]
+y.pop()
+print(len(y))
+z = [1, 2, 3]
+print(1 in z)
+print(99 not in z)

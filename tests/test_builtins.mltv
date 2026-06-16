@@ -1,0 +1,6 @@
+print(int("42"))
+print(str(42))
+print(abs(-5))
+print(len([10, 20, 30]))
+x = [100, 200]
+print(x[0])

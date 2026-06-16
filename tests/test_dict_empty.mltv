@@ -1,0 +1,4 @@
+d = {}
+print(len(d))
+d = {"a": 1}
+print(len(d))

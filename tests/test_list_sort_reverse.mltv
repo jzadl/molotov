@@ -1,0 +1,8 @@
+a = [3, 1, 4, 1, 5]
+a.sort()
+print(a[0])
+print(a[-1])
+b = [1, 2, 3]
+b.reverse()
+print(b[0])
+print(b[2])

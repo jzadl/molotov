@@ -1,0 +1,5 @@
+x = 42
+print(x)
+del x
+y = 99
+print(y)

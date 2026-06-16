@@ -1,0 +1,5 @@
+print(avg([1, 2, 3, 4]))
+print(round(3.7))
+print(clamp(5, 0, 10))
+print(clamp(-1, 0, 10))
+print(clamp(15, 0, 10))

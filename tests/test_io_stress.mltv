@@ -1,0 +1,30 @@
+n = 2000
+
+def random_hex(length):
+    s = "0123456789abcdef"
+    result = ""
+    for i in range(length):
+        result = result + str(s[randint(0, 15)])
+    return result
+
+dir = embed_rust("std::env::temp_dir().join(\"molotov_io_stress\").to_string_lossy().to_string()")
+embed_rust("let _ = std::fs::remove_dir_all(&std::env::temp_dir().join(\"molotov_io_stress\"));")
+embed_rust("std::fs::create_dir_all(&std::env::temp_dir().join(\"molotov_io_stress\")).unwrap();")
+
+print("dir: " + dir)
+
+start = embed_rust("std::time::Instant::now()")
+
+print("creating " + str(n) + " files...")
+for i in range(n):
+    name = str(i) + "_" + random_hex(64)
+    content = random_hex(256)
+    embed_rust("std::fs::write(std::env::temp_dir().join(\"molotov_io_stress\").join(&name), &content).unwrap();")
+
+create_time = embed_rust("start.elapsed().as_secs_f64()")
+print("created " + str(n) + " files in " + str(create_time) + "s")
+
+embed_rust("std::fs::remove_dir_all(&std::env::temp_dir().join(\"molotov_io_stress\")).unwrap();")
+
+clean_time = embed_rust("start.elapsed().as_secs_f64()")
+print("deleted in " + str(clean_time) + "s")

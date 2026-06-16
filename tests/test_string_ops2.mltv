@@ -1,0 +1,6 @@
+print("hello world".capitalize())
+print("hello world".title())
+print("Hello".swapcase())
+print("hello".find("l"))
+print("hello".rfind("l"))
+print("hello".count("l"))

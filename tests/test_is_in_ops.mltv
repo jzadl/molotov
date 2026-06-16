@@ -1,0 +1,8 @@
+a = [1, 2, 3]
+print(2 in a)
+print(5 in a)
+print(2 not in a)
+print(5 not in a)
+x = None
+if x is None:
+    print("is_none")

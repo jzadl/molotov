@@ -1,0 +1,5 @@
+print("  hi  ".strip())
+print("  hi  ".lstrip())
+print("  hi  ".rstrip())
+print("...hi...".lstrip("."))
+print("...hi...".rstrip("."))
