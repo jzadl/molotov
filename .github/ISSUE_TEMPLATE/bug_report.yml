@@ -1,13 +1,13 @@
-name: "🚨 Report a Bug in Molotov"  
-description: "Report a problem or crash in the compiler or mpm."  
-title: "\[Bug\]: "  
-labels: \["bug", "triage"\]  
+name: Bug Report  
+description: Report a problem or crash in the compiler or mpm  
+title: '\[Bug\]: '  
+labels: \['bug', 'triage'\]  
 body: 
 
 *   type: markdown  
     attributes:  
     value: |  
-    Thank you for taking the time to report this issue. Please fill out the fields below to help us fix it. 
+    Thank you for taking the time to report this issue. Please fill out the fields below to help us fix it as soon as possible. 
 *   type: input  
     id: version  
     attributes:  
@@ -31,7 +31,7 @@ body: 
     id: code\_example  
     attributes:  
     label: Molotov Code causing the issue  
-    description: Paste the `.mtv` code snippet that breaks the compiler here.  
+    description: Paste the .mtv code snippet that breaks the compiler here.  
     placeholder: |  
     def fib(n):  
     ...  
