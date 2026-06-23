@@ -1,9 +1,11 @@
 name: Bug Report  
 description: Report a problem or crash in the compiler or mpm  
-title: '\[Bug\]: '  
-labels: \['bug', 'triage'\]  
-body: 
+title: "\[Bug\]: "  
+labels: 
 
+*   bug 
+*   triage  
+    body: 
 *   type: markdown  
     attributes:  
     value: |  
