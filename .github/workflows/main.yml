@@ -15,6 +15,7 @@ jobs:
     strategy:
       matrix:
         include:
+          # Linux targets
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             artifact: mltv
@@ -25,16 +26,12 @@ jobs:
             artifact: mltv
             archive: mltv-linux-arm64.tar.gz
 
-          - target: x86_64-pc-windows-gnu
+          - target: i686-unknown-linux-gnu
             os: ubuntu-latest
-            artifact: mltv.exe
-            archive: mltv-windows-x86_64.zip
+            artifact: mltv
+            archive: mltv-linux-i686.tar.gz
 
-          - target: aarch64-pc-windows-gnu
-            os: ubuntu-latest
-            artifact: mltv.exe
-            archive: mltv-windows-arm64.zip
-
+          # macOS targets
           - target: x86_64-apple-darwin
             os: macos-latest
             artifact: mltv
@@ -45,6 +42,29 @@ jobs:
             artifact: mltv
             archive: mltv-macos-arm64.tar.gz
 
+          # Windows targets (native)
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            artifact: mltv.exe
+            archive: mltv-windows-x86_64.zip
+
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+            artifact: mltv.exe
+            archive: mltv-windows-arm64.zip
+
+          - target: i686-pc-windows-msvc
+            os: windows-latest
+            artifact: mltv.exe
+            archive: mltv-windows-i686.zip
+
+          # Windows targets (cross-compile from Linux)
+          - target: x86_64-pc-windows-gnu
+            os: ubuntu-latest
+            artifact: mltv.exe
+            archive: mltv-windows-x86_64-gnu.zip
+
+          # FreeBSD target
           - target: x86_64-unknown-freebsd
             os: ubuntu-latest
             artifact: mltv
@@ -64,17 +84,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
 
-      - name: Install cross-compile tools (Windows x86_64)
+      - name: Install cross-compile tools (Linux i686)
+        if: matrix.target == 'i686-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib
+
+      - name: Install cross-compile tools (Windows x86_64 from Linux)
         if: matrix.target == 'x86_64-pc-windows-gnu'
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-mingw-w64-x86-64
-
-      - name: Install cross-compile tools (Windows ARM64)
-        if: matrix.target == 'aarch64-pc-windows-gnu'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-w64-mingw32
 
       - name: Install cross-compile tools (FreeBSD)
         if: matrix.target == 'x86_64-unknown-freebsd'
@@ -86,7 +106,6 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }}
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-          CARGO_TARGET_AARCH64_PC_WINDOWS_GNU_LINKER: aarch64-w64-mingw32-gcc
           CARGO_TARGET_X86_64_UNKNOWN_FREEBSD_LINKER: clang
 
       - name: Package (tar.gz)
@@ -99,6 +118,7 @@ jobs:
             tar -czf ${{ matrix.archive }} mltv
           fi
           rm mltv
+        shell: bash
 
       - name: Package (zip)
         if: endsWith(matrix.archive, '.zip')
@@ -110,6 +130,7 @@ jobs:
             zip ${{ matrix.archive }} mltv.exe
           fi
           rm mltv.exe
+        shell: bash
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -161,10 +182,13 @@ jobs:
             |----------|----------|
             | Linux x86_64 | `mltv-linux-x86_64.tar.gz` |
             | Linux ARM64 | `mltv-linux-arm64.tar.gz` |
+            | Linux i686 | `mltv-linux-i686.tar.gz` |
             | macOS x86_64 | `mltv-macos-x86_64.tar.gz` |
             | macOS ARM64 (M1/M2/M3) | `mltv-macos-arm64.tar.gz` |
-            | Windows x86_64 | `mltv-windows-x86_64.zip` |
-            | Windows ARM64 | `mltv-windows-arm64.zip` |
+            | Windows x86_64 (MSVC) | `mltv-windows-x86_64.zip` |
+            | Windows ARM64 (MSVC) | `mltv-windows-arm64.zip` |
+            | Windows i686 (MSVC) | `mltv-windows-i686.zip` |
+            | Windows x86_64 (GNU) | `mltv-windows-x86_64-gnu.zip` |
             | FreeBSD x86_64 | `mltv-freebsd-x86_64.tar.gz` |
           files: artifacts/*
           draft: false
