@@ -146,15 +146,23 @@ jobs:
 
       - name: Package (zip)
         if: endsWith(matrix.archive, '.zip')
+        shell: bash
         run: |
           cp target/${{ matrix.target }}/release/${{ matrix.artifact }} mltv.exe
           if [ -f "docs/README.md" ]; then
-            zip ${{ matrix.archive }} mltv.exe docs/README.md
+            if [ "$RUNNER_OS" = "Windows" ]; then
+              7z a -tzip ${{ matrix.archive }} mltv.exe docs/README.md
+            else
+              zip ${{ matrix.archive }} mltv.exe docs/README.md
+            fi
           else
-            zip ${{ matrix.archive }} mltv.exe
+            if [ "$RUNNER_OS" = "Windows" ]; then
+              7z a -tzip ${{ matrix.archive }} mltv.exe
+            else
+              zip ${{ matrix.archive }} mltv.exe
+            fi
           fi
           rm mltv.exe
-        shell: bash
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
