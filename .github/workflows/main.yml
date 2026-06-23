@@ -78,6 +78,8 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # ── Linux cross-compile tools ──────────────────────────────
+
       - name: Install cross-compile tools (Linux ARM64)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
@@ -96,17 +98,39 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-mingw-w64-x86-64
 
-      - name: Install cross-compile tools (FreeBSD)
+      # ── FreeBSD: use zigbuild (needs no sysroot) ───────────────
+
+      - name: Install cargo-zigbuild (FreeBSD)
         if: matrix.target == 'x86_64-unknown-freebsd'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang libexecinfo-dev
+          pip install cargo-zigbuild
 
-      - name: Build
+      # ── Windows MSVC ARM64/i686: use xwin (provides CRT/libs) ──
+
+      - name: Install cargo-xwin (Windows cross)
+        if: matrix.target == 'aarch64-pc-windows-msvc' || matrix.target == 'i686-pc-windows-msvc'
+        run: |
+          cargo install cargo-xwin
+
+      # ── Build ──────────────────────────────────────────────────
+
+      - name: Build (zigbuild)
+        if: matrix.target == 'x86_64-unknown-freebsd'
+        run: cargo zigbuild --release --target ${{ matrix.target }}
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+
+      - name: Build (xwin)
+        if: matrix.target == 'aarch64-pc-windows-msvc' || matrix.target == 'i686-pc-windows-msvc'
+        run: cargo xwin build --release --target ${{ matrix.target }}
+
+      - name: Build (standard)
+        if: matrix.target != 'x86_64-unknown-freebsd' && matrix.target != 'aarch64-pc-windows-msvc' && matrix.target != 'i686-pc-windows-msvc'
         run: cargo build --release --target ${{ matrix.target }}
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-          CARGO_TARGET_X86_64_UNKNOWN_FREEBSD_LINKER: clang
+
+      # ── Package ────────────────────────────────────────────────
 
       - name: Package (tar.gz)
         if: "!endsWith(matrix.archive, '.zip')"
