@@ -30,7 +30,7 @@ body:
     id: code_example
     attributes:
       label: "Molotov Code causing the issue"
-      description: "Paste the `.mtv` code snippet that breaks the compiler here."
+      description: "Paste the `.mltv` code snippet that breaks the compiler here."
       placeholder: |
         def fib(n):
           ...
