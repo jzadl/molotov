@@ -5,6 +5,13 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 
+fn home_dir() -> Option<PathBuf> {
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()
+        .map(PathBuf::from)
+}
+
 fn resolve_module(module_path: &str, source_dir: &str) -> Option<PathBuf> {
     let parts: Vec<&str> = module_path.split("::").collect();
 
@@ -19,8 +26,8 @@ fn resolve_module(module_path: &str, source_dir: &str) -> Option<PathBuf> {
     }
 
     // Try ~/.molotov/libs
-    if let Ok(home) = std::env::var("HOME") {
-        let mut lib_path = PathBuf::from(home);
+    if let Some(home) = home_dir() {
+        let mut lib_path = home;
         lib_path.push(".molotov/libs");
 
         // Try direct file ~/.molotov/libs/a/b.mltv
@@ -626,9 +633,11 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
                     args.first().map(|a| match a {
                         Expr::StrLit(s) => {
                             let abs = if s.starts_with('/') { s.clone() } else {
-                                format!("{}/{}", ctx.source_dir, s)
+                                let mut p = std::path::PathBuf::from(&ctx.source_dir);
+                                p.push(s);
+                                p.to_string_lossy().to_string()
                             };
-                            format!("include_str!(\"{}\")", abs)
+                            format!("include_str!(\"{}\")", abs.replace('\\', "\\\\"))
                         }
                         _ => format!("include_str!({})", args_rust[0]),
                     }).unwrap_or_default()
