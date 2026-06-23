@@ -1,5 +1,7 @@
 # Molotov
 
+[![Release](https://github.com/jzadl/molotov/actions/workflows/main.yml/badge.svg)](https://github.com/jzadl/molotov/actions/workflows/main.yml)
+
 Molotov is a programming language with Python-like syntax that compiles to native binaries via Rust. Write in Python-style syntax, get Rust performance.
 
 ```python
