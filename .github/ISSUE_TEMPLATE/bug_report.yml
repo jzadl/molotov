@@ -1,0 +1,48 @@
+name: "🚨 Report a Bug in Molotov"  
+description: "Report a problem or crash in the compiler or mpm."  
+title: "\[Bug\]: "  
+labels: \["bug", "triage"\]  
+body: 
+
+*   type: markdown  
+    attributes:  
+    value: |  
+    Thank you for taking the time to report this issue. Please fill out the fields below to help us fix it. 
+*   type: input  
+    id: version  
+    attributes:  
+    label: Which version of Molotov are you using?  
+    placeholder: e.g., v1.3  
+    validations:  
+    required: true 
+*   type: dropdown  
+    id: os  
+    attributes:  
+    label: Operating System  
+    options:  
+    \- Windows (x86\_64)  
+    \- Linux (x86\_64)  
+    \- macOS (Apple Silicon)  
+    \- macOS (Intel)  
+    \- Other  
+    validations:  
+    required: true 
+*   type: textarea  
+    id: code\_example  
+    attributes:  
+    label: Molotov Code causing the issue  
+    description: Paste the `.mtv` code snippet that breaks the compiler here.  
+    placeholder: |  
+    def fib(n):  
+    ...  
+    render: python  
+    validations:  
+    required: true 
+*   type: textarea  
+    id: error\_output  
+    attributes:  
+    label: Terminal Error Output  
+    description: Paste the full error message shown in your console.  
+    render: bash  
+    validations:  
+    required: true
