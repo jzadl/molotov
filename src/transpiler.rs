@@ -127,7 +127,8 @@ impl TypeEnv {
                 | BinOp::Ge
                 | BinOp::In
                 | BinOp::NotIn
-                | BinOp::Is => Type::Bool,
+                |                 BinOp::Is => Type::Bool,
+                BinOp::IsNot => Type::Bool,
                 BinOp::Add => {
                     let lt = self.infer_expr_type(left);
                     let rt = self.infer_expr_type(right);
@@ -202,6 +203,22 @@ impl TypeEnv {
                 "exists" => Type::Bool,
                 "abs" => Type::I64,
                 "round" => Type::I64,
+                "all" => Type::Bool,
+                "any" => Type::Bool,
+                "sorted" => {
+                    if let Expr::FuncCall(_, args) = expr {
+                        args.first().map(|a| self.infer_expr_type(a)).unwrap_or(Type::List(Box::new(Type::Unknown)))
+                    } else {
+                        Type::List(Box::new(Type::Unknown))
+                    }
+                }
+                "reversed" => {
+                    if let Expr::FuncCall(_, args) = expr {
+                        args.first().map(|a| self.infer_expr_type(a)).unwrap_or(Type::List(Box::new(Type::Unknown)))
+                    } else {
+                        Type::List(Box::new(Type::Unknown))
+                    }
+                }
                 "type_of" => Type::Str,
                 "today" => Type::Str,
                 "now" => Type::Str,
@@ -365,7 +382,13 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
         Expr::Starred(e) => expr_to_rust(e, env, ctx),
         Expr::Comp(c) => {
             for g in &c.generators {
-                env.vars.insert(g.var.clone(), Type::I64);
+                let iter_type = env.infer_expr_type(&g.iter);
+                let elem_type = match iter_type {
+                    Type::List(t) => *t,
+                    Type::Str => Type::Str,
+                    _ => Type::I64,
+                };
+                env.vars.insert(g.var.clone(), elem_type);
             }
             match c.kind {
                 ComprehensionKind::List => {
@@ -515,12 +538,60 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
                     }
                 }
                 BinOp::Pow => format!("({} as i64).pow({} as u32)", l, r),
-                BinOp::Eq => format!("{} == {}", l, r),
-                BinOp::Ne => format!("{} != {}", l, r),
-                BinOp::Lt => format!("{} < {}", l, r),
-                BinOp::Gt => format!("{} > {}", l, r),
-                BinOp::Le => format!("{} <= {}", l, r),
-                BinOp::Ge => format!("{} >= {}", l, r),
+                BinOp::Eq => {
+                    let lt = env.infer_expr_type(left);
+                    let rt = env.infer_expr_type(right);
+                    if (lt == Type::F64 || rt == Type::F64) && lt != rt {
+                        format!("({} as f64) == ({} as f64)", l, r)
+                    } else {
+                        format!("{} == {}", l, r)
+                    }
+                }
+                BinOp::Ne => {
+                    let lt = env.infer_expr_type(left);
+                    let rt = env.infer_expr_type(right);
+                    if (lt == Type::F64 || rt == Type::F64) && lt != rt {
+                        format!("({} as f64) != ({} as f64)", l, r)
+                    } else {
+                        format!("{} != {}", l, r)
+                    }
+                }
+                BinOp::Lt => {
+                    let lt = env.infer_expr_type(left);
+                    let rt = env.infer_expr_type(right);
+                    if lt == Type::F64 || rt == Type::F64 {
+                        format!("({} as f64) < ({} as f64)", l, r)
+                    } else {
+                        format!("{} < {}", l, r)
+                    }
+                }
+                BinOp::Gt => {
+                    let lt = env.infer_expr_type(left);
+                    let rt = env.infer_expr_type(right);
+                    if lt == Type::F64 || rt == Type::F64 {
+                        format!("({} as f64) > ({} as f64)", l, r)
+                    } else {
+                        format!("{} > {}", l, r)
+                    }
+                }
+                BinOp::Le => {
+                    let lt = env.infer_expr_type(left);
+                    let rt = env.infer_expr_type(right);
+                    if lt == Type::F64 || rt == Type::F64 {
+                        format!("({} as f64) <= ({} as f64)", l, r)
+                    } else {
+                        format!("{} <= {}", l, r)
+                    }
+                }
+                BinOp::Ge => {
+                    let lt = env.infer_expr_type(left);
+                    let rt = env.infer_expr_type(right);
+                    if lt == Type::F64 || rt == Type::F64 {
+                        format!("({} as f64) >= ({} as f64)", l, r)
+                    } else {
+                        format!("{} >= {}", l, r)
+                    }
+                }
                 BinOp::And => format!("{} && {}", l, r),
                 BinOp::Or => format!("{} || {}", l, r),
                 BinOp::In => {
@@ -539,7 +610,32 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
                         format!("!{}.contains(&{})", r, l)
                     }
                 }
-                BinOp::Is => format!("{} == {}", l, r),
+                BinOp::Is => {
+                    let rt = env.infer_expr_type(right);
+                    if rt == Type::None {
+                        let lt = env.infer_expr_type(left);
+                        if lt == Type::None {
+                            "true".to_string()
+                        } else {
+                            "false".to_string()
+                        }
+                    } else {
+                        format!("{} == {}", l, r)
+                    }
+                }
+                BinOp::IsNot => {
+                    let rt = env.infer_expr_type(right);
+                    if rt == Type::None {
+                        let lt = env.infer_expr_type(left);
+                        if lt == Type::None {
+                            "false".to_string()
+                        } else {
+                            "true".to_string()
+                        }
+                    } else {
+                        format!("{} != {}", l, r)
+                    }
+                }
             }
         }
         Expr::UnaryOp(op, expr) => {
@@ -601,8 +697,8 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
                     else { format!("({}..{}).step_by({} as usize)", args_rust[0], args_rust[1], args_rust[2]) };
                     format!("({})", r)
                 }
-                "int" => format!("{}.parse::<i64>().unwrap_or(0)", args_rust[0]),
-                "float" => format!("{}.parse::<f64>().unwrap_or(0.0)", args_rust[0]),
+                "int" => format!("{{ let __tmp = {}.to_string(); __tmp.parse::<i64>().unwrap_or(0) }}", args_rust[0]),
+                "float" => format!("{{ let __tmp = {}.to_string(); __tmp.parse::<f64>().unwrap_or(0.0) }}", args_rust[0]),
                 "str" => format!("{}.to_string()", args_rust[0]),
                 "input" => {
                     let mut s = String::from("{\n");
@@ -627,8 +723,8 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
                     let pairs: Vec<String> = args_rust.iter().map(|a| format!("{}.into_iter()", a)).collect();
                     format!("{}.zip({})", pairs[0], pairs[1..].join(".zip()"))
                 }
-                "map" => format!("{}.into_iter().map({})", args_rust[1], args_rust[0]),
-                "filter" => format!("{}.into_iter().filter({})", args_rust[1], args_rust[0]),
+                "map" => format!("{}.iter().cloned().map({}).collect::<Vec<_>>()", args_rust[1], args_rust[0]),
+                "filter" => format!("{}.iter().cloned().filter({}).collect::<Vec<_>>()", args_rust[1], args_rust[0]),
                 "cinclude" => {
                     args.first().map(|a| match a {
                         Expr::StrLit(s) => {
@@ -701,7 +797,16 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
                 "exists" => format!("std::path::Path::new(&{}).exists()", args_rust[0]),
                 "abs" => format!("({} as i64).abs()", args_rust[0]),
                 "round" => format!("({} as f64).round() as i64", args_rust[0]),
-                 "type_of" => "\"<value>\"".to_string(),
+                "all" => format!("{}.iter().all(|x| *x)", args_rust[0]),
+                "any" => format!("{}.iter().any(|x| *x)", args_rust[0]),
+                "sorted" => {
+                    let elem_type = args.first().map(|a| env.infer_expr_type(a));
+                    let is_f64 = matches!(elem_type, Some(Type::List(ref t)) if **t == Type::F64);
+                    let copy_type = if is_f64 || matches!(elem_type, Some(Type::List(ref t)) if is_copy_type(t)) { "copied" } else { "cloned" };
+                    format!("{{ let mut __v: Vec<_> = {}.iter().{}().collect(); __v.sort(); __v }}", args_rust[0], copy_type)
+                }
+                "reversed" => format!("{{ let mut __v: Vec<_> = {}.clone(); __v.reverse(); __v }}", args_rust[0]),
+                "type_of" => format!("{{ fn type_name_of<T: ?Sized>(_: &T) -> &str {{ std::any::type_name::<T>() }} type_name_of(&{}) }}", args_rust[0]),
                 "today" => {
                     r#"{ let __days = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() / 86400; let __z = __days + 719468; let __era = __z / 146097; let __doe = __z - __era * 146097; let __yoe = (__doe - __doe / 1460 + __doe / 36524 - __doe / 146096) / 365; let __y = __yoe + __era * 400; let __d = __doe - (365 * __yoe + __yoe / 4 - __yoe / 100); let __mp = (5 * __d + 2) / 153; let __day = __d - (__mp * 153 + 2) / 5 + 1; let __month = __mp + 3 - if __mp >= 10 { 12 } else { 0 }; let __year = __y + if __mp < 10 { 0 } else { 1 }; format!("{:04}-{:02}-{:02}", __year, __month, __day) }"#.to_string()
                 }
@@ -734,7 +839,19 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
             let obj_type = env.infer_expr_type(obj);
             match method.as_str() {
                 "append" => format!("{}.push({})", obj_s, args_s.join(", ")),
-                "pop" => format!("{}.pop()", obj_s),
+                "pop" => {
+                    if matches!(obj_type, Type::Dict(_, _)) {
+                        if args_s.len() >= 2 {
+                            format!("{}.remove(&{}).unwrap_or_else(|| {})", obj_s, args_s[0], args_s[1])
+                        } else if args_s.len() == 1 {
+                            format!("{}.remove(&{}).unwrap()", obj_s, args_s[0])
+                        } else {
+                            format!("{}.drain().next().map(|(_, v)| v).unwrap()", obj_s)
+                        }
+                    } else {
+                        format!("{}.pop().unwrap()", obj_s)
+                    }
+                },
                 "remove" => {
                     let val = args_s.join(", ");
                     if matches!(obj_type, Type::Str) {
@@ -919,6 +1036,9 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
             } else if matches!(obj_type, Type::Dict(_, _)) {
                 let raw = expr_to_rust(index, env, ctx);
                 format!("{}[&{}]", obj_s, raw)
+            } else if matches!(obj_type, Type::Tuple(_)) {
+                let raw = expr_to_rust(index, env, ctx);
+                format!("{}.{}", obj_s, raw)
             } else if matches!(obj_type, Type::Str) && idx_type == Type::I64 {
                 let raw = expr_to_rust(index, env, ctx);
                 format!(

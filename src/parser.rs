@@ -676,7 +676,11 @@ impl Parser {
     }
 
     fn parse_comparison(&mut self) -> Result<Expr, String> {
-        let mut left = self.parse_term_expr()?;
+        let first = self.parse_term_expr()?;
+
+        // Collect all operators and operands for proper chaining
+        let mut ops: Vec<BinOp> = Vec::new();
+        let mut operands: Vec<Expr> = Vec::new();
 
         loop {
             let op = if self.check(&Token::EqEq) {
@@ -693,6 +697,8 @@ impl Parser {
                 Some(BinOp::Ge)
             } else if self.check(&Token::KwIn) {
                 Some(BinOp::In)
+            } else if self.check(&Token::KwIs) && self.peek_at(1).map_or(false, |t| t.token == Token::KwNot) {
+                Some(BinOp::IsNot)
             } else if self.check(&Token::KwIs) {
                 Some(BinOp::Is)
             } else if self.check(&Token::KwNot)
@@ -706,16 +712,37 @@ impl Parser {
             match op {
                 Some(op) => {
                     self.advance();
+                    if op == BinOp::IsNot {
+                        self.advance(); // consume 'not'
+                    }
                     if op == BinOp::NotIn {
-                        self.advance();
-                    } // consume the 'in' too
+                        self.advance(); // consume 'in'
+                    }
                     let right = self.parse_term_expr()?;
-                    left = Expr::BinOp(Box::new(left), op, Box::new(right));
+                    ops.push(op);
+                    operands.push(right);
                 }
                 None => break,
             }
         }
-        Ok(left)
+
+        if ops.is_empty() {
+            return Ok(first);
+        }
+
+        // Build chained comparison: a < b < c => (a < b) && (b < c)
+        let mut result = Expr::BinOp(Box::new(first.clone()), ops[0].clone(), Box::new(operands[0].clone()));
+
+        for i in 1..ops.len() {
+            let cmp = Expr::BinOp(
+                Box::new(operands[i - 1].clone()),
+                ops[i].clone(),
+                Box::new(operands[i].clone()),
+            );
+            result = Expr::BinOp(Box::new(result), BinOp::And, Box::new(cmp));
+        }
+
+        Ok(result)
     }
 
     fn parse_term_expr(&mut self) -> Result<Expr, String> {

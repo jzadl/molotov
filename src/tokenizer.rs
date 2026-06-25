@@ -353,7 +353,7 @@ fn tokenize_line(line: &str) -> Result<Vec<Token>, String> {
             '/' => tokens.push(Token::Slash),
             '%' => tokens.push(Token::Percent),
             '=' => tokens.push(Token::Eq),
-            '!' => tokens.push(Token::BangEq),
+            '!' => return Err("unexpected character '!'".to_string()),
             '<' => tokens.push(Token::Less),
             '>' => tokens.push(Token::Greater),
             '(' => tokens.push(Token::LParen),

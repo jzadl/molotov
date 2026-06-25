@@ -18,13 +18,21 @@ nothing = None     # unit type ()
 ```python
 a, b = 1, 2
 a, b = b, a       # swap!
+t = (1, 2, 3)
+print(t[0])        # tuple indexing → 1
 ```
 
 ### Math
 ```python
 +  -  *  /  //  %  **
 ==  !=  <  >  <=  >=
-and  or  not  in  is
+and  or  not  in  not in  is  is not
+```
+
+### Chained Comparisons
+```python
+if 0 < x < 10:       # equivalent to: 0 < x and x < 10
+    print("in range")
 ```
 
 ### If / Elif / Else
@@ -157,6 +165,11 @@ evens = filter(lambda x: x % 2 == 0, nums)
 | `avg(list)` | Average of numbers | `avg([1, 2, 3])` → 2.0 |
 | `sleep(secs)` | Pause execution | `sleep(1.5)` |
 | `clear()` | Clear terminal screen | `clear()` |
+| `type_of(x)` | Get Rust type name of value | `type_of(42)` → `"i64"` |
+| `all(list)` | True if all elements are truthy | `all([True, False])` → False |
+| `any(list)` | True if any element is truthy | `any([False, True])` → True |
+| `sorted(list)` | Return sorted copy | `sorted([3, 1, 2])` → [1, 2, 3] |
+| `reversed(list)` | Return reversed copy | `reversed([1, 2, 3])` → [3, 2, 1] |
 
 ### 🎲 Random Functions
 
@@ -192,7 +205,7 @@ String methods: `upper`, `lower`, `strip`, `split`, `join`, `replace`, `startswi
 
 List methods: `append`, `pop`, `insert`, `remove`, `sort`, `reverse`, `clear`, `copy`
 
-Dict methods: `keys`, `values`, `items`, `get`, `pop`, `popitem`, `clear`
+Dict methods: `keys`, `values`, `items`, `get`, `pop(key, default?)`, `popitem`, `clear`
 
 ### 🔮 Internal (you can call these but they have magic behavior)
 - `enumerate(iter)` → `.enumerate()` call

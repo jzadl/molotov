@@ -173,7 +173,7 @@ run_test test_classes.mltv     "classes"             "5|6"
 
 # ── Section 9: Tuples ─────────────────────────────────────────────
 echo -e "\n${BOLD}Tuples${NC}"
-run_test test_tuple_ops.mltv   "tuples"              "1" "known_bug"
+run_test test_tuple_ops.mltv   "tuples"              "1"
 
 # ── Section 10: Builtins ──────────────────────────────────────────
 echo -e "\n${BOLD}Built-in Functions${NC}"

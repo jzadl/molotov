@@ -120,17 +120,19 @@ fn deploy(file: &str, output: Option<&str>, keep: bool, rust_only: bool) -> anyh
         output_name
     };
 
-    let status = Command::new("rustc")
+    let output = Command::new("rustc")
         .arg(&rs_path)
         .arg("-o")
         .arg(binary_name)
-        .status()
+        .output()
         .map_err(|e| anyhow::anyhow!("failed to run rustc: {}", e))?;
 
-    if !status.success() {
+    if !output.status.success() {
         if !keep {
             let _ = fs::remove_file(&rs_path);
         }
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eprintln!("rustc error:\n{}", stderr);
         anyhow::bail!("rustc compilation failed");
     }
 
@@ -180,16 +182,18 @@ fn run_file(file: &str, args: &[String]) -> anyhow::Result<()> {
     fs::write(&rs_path, &rust_code)
         .map_err(|e| anyhow::anyhow!("failed to write '{}': {}", rs_path.display(), e))?;
 
-    let status = Command::new("rustc")
+    let output = Command::new("rustc")
         .arg("-A")
         .arg("warnings")
         .arg(&rs_path)
         .arg("-o")
         .arg(&binary_path)
-        .status()
+        .output()
         .map_err(|e| anyhow::anyhow!("failed to run rustc: {}", e))?;
 
-    if !status.success() {
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eprintln!("rustc error:\n{}", stderr);
         anyhow::bail!("rustc compilation failed");
     }
 

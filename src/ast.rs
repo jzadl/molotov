@@ -65,6 +65,7 @@ pub enum BinOp {
     In,
     NotIn,
     Is,
+    IsNot,
 }
 
 #[derive(Debug, Clone)]
