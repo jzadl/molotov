@@ -15,14 +15,19 @@ fn home_dir() -> Option<PathBuf> {
 fn resolve_module(module_path: &str, source_dir: &str) -> Option<PathBuf> {
     let parts: Vec<&str> = module_path.split("::").collect();
 
+    // Try both .mltv and .rs extensions (prefer .mltv)
+    let exts = ["mltv", "rs"];
+
     // Try current dir first
-    let mut local_path = PathBuf::from(source_dir);
-    for part in &parts {
-        local_path.push(part);
-    }
-    local_path.set_extension("mltv");
-    if local_path.exists() {
-        return Some(local_path);
+    for ext in &exts {
+        let mut local_path = PathBuf::from(source_dir);
+        for part in &parts {
+            local_path.push(part);
+        }
+        local_path.set_extension(ext);
+        if local_path.exists() {
+            return Some(local_path);
+        }
     }
 
     // Try ~/.molotov/libs
@@ -30,36 +35,42 @@ fn resolve_module(module_path: &str, source_dir: &str) -> Option<PathBuf> {
         let mut lib_path = home;
         lib_path.push(".molotov/libs");
 
-        // Try direct file ~/.molotov/libs/a/b.mltv
-        let mut p1 = lib_path.clone();
-        for part in &parts {
-            p1.push(part);
-        }
-        p1.set_extension("mltv");
-        if p1.exists() {
-            return Some(p1);
-        }
-
-        // Try ~/.molotov/libs/a/a.mltv (convenience)
-        if parts.len() == 1 {
-            let mut p2 = lib_path.clone();
-            p2.push(parts[0]);
-            p2.push(parts[0]);
-            p2.set_extension("mltv");
-            if p2.exists() {
-                return Some(p2);
+        for ext in &exts {
+            // Try direct file ~/.molotov/libs/a/b.mltv / .rs
+            let mut p1 = lib_path.clone();
+            for part in &parts {
+                p1.push(part);
+            }
+            p1.set_extension(ext);
+            if p1.exists() {
+                return Some(p1);
             }
         }
 
-        // Try ~/.molotov/libs/a/b/b.mltv (convenience for user/repo namespaces)
-        if parts.len() == 2 {
-            let mut p3 = lib_path.clone();
-            p3.push(parts[0]);
-            p3.push(parts[1]);
-            p3.push(parts[1]);
-            p3.set_extension("mltv");
-            if p3.exists() {
-                return Some(p3);
+        for ext in &exts {
+            // Try ~/.molotov/libs/a/a.mltv / .rs (convenience)
+            if parts.len() == 1 {
+                let mut p2 = lib_path.clone();
+                p2.push(parts[0]);
+                p2.push(parts[0]);
+                p2.set_extension(ext);
+                if p2.exists() {
+                    return Some(p2);
+                }
+            }
+        }
+
+        for ext in &exts {
+            // Try ~/.molotov/libs/a/b/b.mltv / .rs (convenience for user/repo namespaces)
+            if parts.len() == 2 {
+                let mut p3 = lib_path.clone();
+                p3.push(parts[0]);
+                p3.push(parts[1]);
+                p3.push(parts[1]);
+                p3.set_extension(ext);
+                if p3.exists() {
+                    return Some(p3);
+                }
             }
         }
     }
@@ -354,7 +365,10 @@ fn indent(level: usize) -> String {
 fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
     match expr {
         Expr::IntLit(v) => v.to_string(),
-        Expr::FloatLit(v) => v.to_string(),
+        Expr::FloatLit(v) => {
+            let s = v.to_string();
+            if !s.contains('.') && !s.contains('e') { format!("{}.0", s) } else { s }
+        }
         Expr::StrLit(s) => {
             let mut escaped = String::new();
             for c in s.chars() {
@@ -1032,10 +1046,14 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
                     .replace('\n', "\\n")
                     .replace('\t', "\\t")
                     .replace('\r', "\\r");
-                format!("{}[\"{}\"]", obj_s, escaped)
+                if matches!(obj_type, Type::Dict(_, _)) || obj_type == Type::Unknown {
+                    format!("{}[\"{}\"].clone()", obj_s, escaped)
+                } else {
+                    format!("{}[\"{}\"]", obj_s, escaped)
+                }
             } else if matches!(obj_type, Type::Dict(_, _)) {
                 let raw = expr_to_rust(index, env, ctx);
-                format!("{}[&{}]", obj_s, raw)
+                format!("{}[&{}].clone()", obj_s, raw)
             } else if matches!(obj_type, Type::Tuple(_)) {
                 let raw = expr_to_rust(index, env, ctx);
                 format!("{}.{}", obj_s, raw)
@@ -2094,7 +2112,16 @@ fn stmt_to_rust(stmt: &Stmt, env: &mut TypeEnv, ctx: &mut CodegenCtx, out: &mut 
             if !ctx.processed_modules.contains(module) {
                 if let Some(path) = resolve_module(module, &ctx.source_dir) {
                     ctx.processed_modules.insert(module.clone());
-                    if let Ok(source) = fs::read_to_string(&path) {
+                    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                    if ext == "rs" {
+                        let abs_path = fs::canonicalize(&path).unwrap_or(path);
+                        let path_str = abs_path.to_string_lossy().replace("\\", "/");
+                        ctx.module_code.push_str(&format!(
+                            "pub mod {} {{\ninclude!(\"{}\");\n}}\n",
+                            internal_mod_name, path_str
+                        ));
+                        is_molotov = true;
+                    } else if let Ok(source) = fs::read_to_string(&path) {
                         if let Ok(tokens) = tokenize(&source) {
                             let mut parser = Parser::new(tokens);
                             if let Ok(program) = parser.parse_program() {
@@ -2575,6 +2602,9 @@ fn transpile_with_dir_recursive(
             | Stmt::ClassDef { .. }
             | Stmt::Import(_, _)
             | Stmt::FromImport(_, _) => {
+                stmt_to_rust(stmt, &mut env, &mut ctx, &mut body);
+            }
+            Stmt::Expr(e) if matches!(e, Expr::FuncCall(name, _) if name == "embed_rust") => {
                 stmt_to_rust(stmt, &mut env, &mut ctx, &mut body);
             }
             _ => {

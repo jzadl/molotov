@@ -75,6 +75,16 @@ Actual `.mpk` files may use multiple spaces or tabs between the key and the valu
 
 ---
 
+## Package Source Format
+
+Packages can ship either `.rs` (native Rust) or `.mltv` (Molotov) source files. The transpiler resolves `from pkg import func` by looking for `pkg.rs` or `pkg.mltv` in `~/.molotov/libs/pkg/`.
+
+For libraries that expose functions to Molotov programs, `.rs` is the recommended format. The `.rs` file contains plain Rust `pub fn` with no special wrappers. The transpiler includes it via `pub mod pkg { include!("path/to/pkg.rs"); }` and generates `use pkg::{func}` for the user program.
+
+For `.rs` libraries, only the Rust standard library is available unless you add external crates to Molotov's generated `Cargo.toml`. The `rand` and `serde_json` crates are included by default. Functions must return types that map to Molotov: `i64`, `f64`, `bool`, `String`, `Vec<T>`, `HashMap<String, V>`.
+
+---
+
 ## Subpath Packages
 
 A single GitHub repository can host multiple packages in subdirectories. The format is:
@@ -124,11 +134,16 @@ After installation, the filesystem looks like:
   user/
     repo/
       package.mpk
+      repo.rs
       subpackage/
         package.mpk
+        subpackage.rs
       another-sub/
         package.mpk
+        another-sub.mltv
 ```
+
+Each package directory contains a `package.mpk` for metadata and either a `.rs` or `.mltv` source file with the same name as the package. The transpiler finds the source file via `~/.molotov/libs/<name>/<name>.rs` or `~/.molotov/libs/<name>/<name>.mltv` when you write `from <name> import ...`.
 
 ---
 
