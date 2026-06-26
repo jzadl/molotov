@@ -73,6 +73,29 @@ fn resolve_module(module_path: &str, source_dir: &str) -> Option<PathBuf> {
                 }
             }
         }
+
+        for ext in &exts {
+            // Try ~/.molotov/libs/user/repo/a/a.mltv / .rs (subpath in cloned repos)
+            if parts.len() == 1 {
+                if let Ok(users) = std::fs::read_dir(&lib_path) {
+                    for user in users.flatten() {
+                        if !user.path().is_dir() { continue; }
+                        if let Ok(repos) = std::fs::read_dir(user.path()) {
+                            for repo in repos.flatten() {
+                                if !repo.path().is_dir() { continue; }
+                                let mut p4 = repo.path();
+                                p4.push(parts[0]);
+                                p4.push(parts[0]);
+                                p4.set_extension(ext);
+                                if p4.exists() {
+                                    return Some(p4);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     None
@@ -694,7 +717,7 @@ fn expr_to_rust(expr: &Expr, env: &mut TypeEnv, ctx: &CodegenCtx) -> String {
                     let joined = args_rust.join(", ");
                     let first_type = args.first().map(|a| env.infer_expr_type(a));
                     let is_bool = matches!(first_type, Some(Type::Bool));
-                    let is_compound = matches!(first_type, Some(Type::Dict(_, _) | Type::List(_) | Type::None));
+                    let is_compound = matches!(first_type, Some(Type::Dict(_, _) | Type::List(_) | Type::None | Type::Unknown));
                     if is_bool {
                         format!("println!(\"{{}}\", if {} {{ \"True\" }} else {{ \"False\" }})", joined)
                     } else if is_compound {

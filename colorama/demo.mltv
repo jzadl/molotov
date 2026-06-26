@@ -1,0 +1,18 @@
+from ansi import fore, back, style, init
+
+f = fore()
+b = back()
+s = style()
+init()
+print(s["BRIGHT"] + f["RED"] + "RED" + f["RESET"])
+print(f["GREEN"] + "GREEN" + f["RESET"])
+print(f["YELLOW"] + "YELLOW" + f["RESET"])
+print(f["BLUE"] + "BLUE" + f["RESET"])
+print(f["MAGENTA"] + "MAGENTA" + f["RESET"])
+print(f["CYAN"] + "CYAN" + f["RESET"])
+print(f["WHITE"] + "WHITE" + f["RESET"])
+print(b["RED"] + "  RED BG  " + b["RESET"])
+print(b["GREEN"] + "  GREEN BG  " + b["RESET"])
+print(b["BLUE"] + "  BLUE BG  " + b["RESET"])
+print(s["BRIGHT"] + f["YELLOW"] + b["MAGENTA"] + "BRIGHT YELLOW ON MAGENTA" + s["RESET_ALL"])
+print("back to normal")

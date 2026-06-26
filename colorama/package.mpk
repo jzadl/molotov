@@ -1,0 +1,4 @@
+package.name        colorama
+package.version     1.0
+package.author      jzadl
+package.description "Lightweight colorama port for Molotov"
