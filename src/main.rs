@@ -104,26 +104,26 @@ fn deploy(file: &str, output: Option<&str>, keep: bool, rust_only: bool) -> anyh
         .map_err(|e| anyhow::anyhow!("transpilation error: {}", e))?;
 
     let output_name = output.unwrap_or("a.out");
-    let rs_path = Path::new(output_name).with_extension("rs");
-
-    fs::write(&rs_path, &rust_code)
-        .map_err(|e| anyhow::anyhow!("failed to write '{}': {}", rs_path.display(), e))?;
-
-    if rust_only {
-        println!("Transpiled to {}", rs_path.display());
-        return Ok(());
-    }
-
     let binary_name = if output_name.ends_with(".rs") {
         output_name.trim_end_matches(".rs")
     } else {
         output_name
     };
 
-    // Try cargo first, fall back to rustc
-    let deploy_dir = rs_path.parent().unwrap_or(Path::new("."));
+    if rust_only {
+        let rs_path = Path::new(output_name).with_extension("rs");
+        fs::write(&rs_path, &rust_code)
+            .map_err(|e| anyhow::anyhow!("failed to write '{}': {}", rs_path.display(), e))?;
+        println!("Transpiled to {}", rs_path.display());
+        return Ok(());
+    }
+
+    let temp_dir = std::env::temp_dir().join("mltv_deploy");
+    let src_dir = temp_dir.join("src");
+    fs::create_dir_all(&src_dir)?;
+
     let cargo_toml = r#"[package]
-name = "mltv_deploy"
+name = "mltv_program"
 version = "0.1.0"
 edition = "2021"
 
@@ -131,54 +131,31 @@ edition = "2021"
 serde_json = "1"
 rand = "0.8"
 "#;
-    let _ = fs::write(deploy_dir.join("Cargo.toml"), cargo_toml);
+    fs::write(temp_dir.join("Cargo.toml"), cargo_toml)
+        .map_err(|e| anyhow::anyhow!("failed to write Cargo.toml: {}", e))?;
 
-    let src_dir = deploy_dir.join("src");
-    let _ = fs::create_dir_all(&src_dir);
-    let _ = fs::copy(&rs_path, src_dir.join("main.rs"));
+    fs::write(src_dir.join("main.rs"), &rust_code)
+        .map_err(|e| anyhow::anyhow!("failed to write source: {}", e))?;
 
-    let cargo_status = Command::new("cargo")
+    let status = Command::new("cargo")
         .arg("build")
         .arg("--manifest-path")
-        .arg(deploy_dir.join("Cargo.toml"))
+        .arg(temp_dir.join("Cargo.toml"))
         .arg("--release")
-        .status();
+        .status()
+        .map_err(|e| anyhow::anyhow!("failed to run cargo: {}", e))?;
 
-    if let Ok(status) = cargo_status {
-        if status.success() {
-            let built = deploy_dir.join("target").join("release").join(if cfg!(windows) { "mltv_deploy.exe" } else { "mltv_deploy" });
-            if built.exists() {
-                if !keep {
-                    let _ = fs::remove_file(&rs_path);
-                }
-                let _ = fs::copy(&built, binary_name);
-                println!("Deployed: {}", binary_name);
-                return Ok(());
-            }
-        }
+    if !status.success() {
+        anyhow::bail!("cargo build failed");
     }
 
-    // Fallback to rustc
-    let output = Command::new("rustc")
-        .arg(&rs_path)
-        .arg("-o")
-        .arg(binary_name)
-        .output()
-        .map_err(|e| anyhow::anyhow!("failed to run rustc: {}", e))?;
-
-    if !output.status.success() {
-        if !keep {
-            let _ = fs::remove_file(&rs_path);
-        }
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        eprintln!("rustc error:\n{}", stderr);
-        anyhow::bail!("rustc compilation failed");
+    let built = temp_dir.join("target").join("release").join(if cfg!(windows) { "mltv_program.exe" } else { "mltv_program" });
+    if !built.exists() {
+        anyhow::bail!("cargo did not produce expected binary");
     }
 
-    if !keep {
-        fs::remove_file(&rs_path)
-            .map_err(|e| anyhow::anyhow!("failed to remove temp file: {}", e))?;
-    }
+    fs::copy(&built, binary_name)
+        .map_err(|e| anyhow::anyhow!("failed to copy binary: {}", e))?;
 
     println!("Deployed: {}", binary_name);
     Ok(())
